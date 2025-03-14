@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="vlrggapi",
-    description="An Unofficial REST API for [vlr.gg](https://www.vlr.gg/), a site for Valorant Esports match and news coverage. Made by [axsddlr](https://github.com/axsddlr)",
+    description="An Unofficial REST API for [vlr.gg](https://www.vlr.gg/), a site for Valorant Esports match and news coverage. Originally created by [axsddlr](https://github.com/axsddlr), with enhancements by [Chefski](https://github.com/chefski)",
     docs_url="/",
     redoc_url=None,
 )

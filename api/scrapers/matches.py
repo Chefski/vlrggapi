@@ -8,39 +8,63 @@ from utils.utils import headers
 
 
 def vlr_upcoming_matches():
-    url = "https://www.vlr.gg"
+    url = "https://www.vlr.gg/matches"
     resp = requests.get(url, headers=headers)
     html = HTMLParser(resp.text)
     status = resp.status_code
 
     result = []
-    for item in html.css(".js-home-matches-upcoming a.wf-module-item"):
-        is_upcoming = item.css_first(".h-match-eta.mod-upcoming")
-        if is_upcoming:
+    for item in html.css("a.wf-module-item.match-item"):
+        # Check if the match is upcoming
+        ml_status = item.css_first(".ml-status")
+        if ml_status and ml_status.text().strip() == "Upcoming":
             teams = []
             flags = []
             scores = []
-            for team in item.css(".h-match-team"):
-                teams.append(team.css_first(".h-match-team-name").text().strip())
+            for team in item.css(".match-item-vs-team"):
+                team_name_element = team.css_first(
+                    ".match-item-vs-team-name .text-of")
+                teams.append(team_name_element.text().strip()
+                             if team_name_element else "Unknown")
                 flags.append(
                     team.css_first(".flag")
                     .attributes["class"]
-                    .replace(" mod-", "")
-                    .replace("16", "_")
+                    .replace(" mod-", "_")
                 )
-                scores.append(team.css_first(".h-match-team-score").text().strip())
+                scores.append(team.css_first(
+                    ".match-item-vs-team-score").text().strip())
 
-            eta = item.css_first(".h-match-eta").text().strip()
+            eta_element = item.css_first(".ml-eta")
+            eta = eta_element.text().strip() if eta_element else "Unknown"
             if eta != "LIVE":
                 eta = eta + " from now"
 
-            match_event = item.css_first(".h-match-preview-event").text().strip()
-            match_series = item.css_first(".h-match-preview-series").text().strip()
-            timestamp = datetime.fromtimestamp(
-                int(item.css_first(".moment-tz-convert").attributes["data-utc-ts"]),
-                tz=timezone.utc,
-            ).strftime("%Y-%m-%d %H:%M:%S")
-            url_path = "https://www.vlr.gg/" + item.attributes["href"]
+            match_series = item.css_first(".match-item-event-series").text().strip().replace("\t", "").replace("\n", "").replace("–", ": ")
+            match_event = (item.css_first(".match-item-event").text().strip().replace("\t", "").replace("\n", "").replace("–", ":"))
+            
+
+            # Prevent event from having the same text as in match series
+            if match_series in match_event:
+                match_event = match_event.replace(match_series, "").strip()
+
+            match_time = item.css_first(".match-item-time").text().strip()
+
+            match_page = "https://www.vlr.gg" + item.attributes["href"]
+            """
+            match_page_response = requests.get(match_page, headers=headers)
+            match_html = HTMLParser(match_page_response.text)
+
+
+            team_logos = []
+            for img in match_html.css(".match-header-vs img"):
+                logo_url = "https:" + img.attributes.get("src", "")
+                team_logos.append(logo_url)
+            """
+
+            tournament_icon_url = ""
+            match_item_icon = item.css_first(".match-item-icon")
+            if match_item_icon and match_item_icon.css_first("img"):
+                tournament_icon_url = f"https:{match_item_icon.css_first('img').attributes['src']}"
 
             result.append(
                 {
@@ -48,11 +72,13 @@ def vlr_upcoming_matches():
                     "team2": teams[1],
                     "flag1": flags[0],
                     "flag2": flags[1],
+                    # "team1_logo": team_logos[0] if len(team_logos) > 0 else "",
+                    # "team2_logo": team_logos[1] if len(team_logos) > 1 else "",
                     "time_until_match": eta,
                     "match_series": match_series,
                     "match_event": match_event,
-                    "unix_timestamp": timestamp,
-                    "match_page": url_path,
+                    "match_page": match_page,
+                    "tournament_icon": tournament_icon_url,
                 }
             )
 

@@ -2,7 +2,7 @@
 
 An Unofficial REST API for [vlr.gg](https://www.vlr.gg/), a site for Valorant Esports match and news coverage.
 
-Built by [Andre Saddler](https://github.com/axsddlr/)
+Built by [Andre Saddler](https://github.com/axsddlr/), with enhancements by [Chefski](https://github.com/chefski)
 
 ## Current Endpoints
 
