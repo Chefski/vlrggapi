@@ -83,7 +83,7 @@ Interactive Swagger docs are available at `/`.
 | `GET /v2/match` | `q` (upcoming/upcoming_extended/live_score/results), `num_pages`, `from_page`, `to_page`, `max_retries`, `request_delay`, `timeout` | 30s–60s |
 | `GET /v2/match/details` | `match_id` | 5 min |
 | `GET /v2/rankings` | `region` | 1 hr |
-| `GET /v2/stats` | `region`, `timespan` | 30 min |
+| `GET /v2/stats` | `region`; `timespan` or `span`; tier/date/side/role/agent/map/threshold/sort filters | 30 min |
 | `GET /v2/events` | `q` (upcoming/completed/live), `page` | 30 min |
 | `GET /v2/event/{id}` | `event_id` (path) | 30 min |
 | `GET /v2/events/matches` | `event_id` | 10 min |
@@ -184,12 +184,15 @@ GET /v2/rankings?region=na
 </details>
 
 ### `GET /v2/stats`
-**Params:** `region` (required), `timespan` (required: 30/60/90/all) | **Cache:** 30 min
+**Params:** `region` (required), plus one of legacy `timespan` (30/60/90/all) or current `span` (30d/60d/90d/custom/2020-current year/all) | **Cache:** 30 min
 
 **Regions** (the `/stats` page taxonomy, distinct from `/rankings`): `all`, `americas`, `emea`, `pacific`, `china`, `intl`. Deprecated aliases are still accepted and normalized: `na`/`br` → `americas`, `eu` → `emea`, `ap`/`kr`/`jp`/`oce` → `pacific`, `cn` → `china`.
 
+The full VLR filter contract is supported: `tier` (all/vct/vcl/t3/gc/cg/off), `from` and `to` for a custom span, `side` (all/t/ct), `role`, `agent`, `map_id`, `min_rounds`, `min_rating`, `sort`, and `dir` (asc/desc). Historical API defaults remain `tier=all`, `min_rounds=200`, and `min_rating=1550`; pass `min_rounds=100&min_rating=0` to match the website defaults.
+
 ```
 GET /v2/stats?region=americas&timespan=30
+GET /v2/stats?region=emea&span=custom&from=2026-01-01&to=2026-06-30&tier=vct&side=ct&role=sentinel&agent=killjoy&map_id=12&min_rounds=100&min_rating=0&sort=kmax&dir=desc
 ```
 
 <details><summary>Response</summary>
@@ -199,15 +202,31 @@ GET /v2/stats?region=americas&timespan=30
   "status": "success",
   "data": {
     "status": 200,
+    "filters": {
+      "tier": "all", "region": "americas", "span": "30d",
+      "from": null, "to": null, "side": "all", "role": "all",
+      "agent": "all", "map_id": "all", "min_rounds": 200,
+      "min_rating": 1550, "sort": "rating2", "dir": "desc"
+    },
     "segments": [
       {
-        "player": "player_name", "org": "ORG",
+        "player": "player_name", "player_id": "1234",
+        "player_url": "https://www.vlr.gg/player/1234/player_name",
+        "country": "us", "org": "ORG", "agents": ["jett"],
+        "agent_usage": [{ "agent": "jett", "usage": "100%" }],
+        "maps_played": "18", "rounds_played": "376",
         "rating": "1.18", "average_combat_score": "235.2",
         "kill_deaths": "1.19", "kill_assists_survived_traded": "72%",
         "average_damage_per_round": "158.4", "kills_per_round": "0.81",
-        "assists_per_round": "0.29", "first_kills_per_round": "0.19",
+        "assists_per_round": "0.29", "first_kill_death_ratio": "1.46",
+        "first_kills_per_round": "0.19",
         "first_deaths_per_round": "0.13", "headshot_percentage": "26%",
-        "clutch_success_percentage": "28%", "clutch_attempts": "9/57"
+        "clutch_success_percentage": "28%", "clutch_attempts": "9/57",
+        "max_kills": "31", "max_kills_match_id": "5555",
+        "max_kills_game_id": "7777",
+        "max_kills_match_url": "https://www.vlr.gg/5555/example/?game=7777",
+        "kills": "304", "deaths": "255", "assists": "109",
+        "first_kills": "72", "first_deaths": "49"
       }
     ]
   }
@@ -518,7 +537,7 @@ Preserved for backwards compatibility. Most return `{"data": {"status": int, "se
 | `GET /news` | — |
 | `GET /match` | `q` (upcoming/upcoming_extended/live_score/results), pagination params |
 | `GET /match/details` | `match_id` |
-| `GET /stats` | `region`, `timespan` |
+| `GET /stats` | Same filters as `/v2/stats` |
 | `GET /rankings` | `region` |
 | `GET /events` | `q` (upcoming/completed/live), `page` |
 | `GET /event/{id}` | — (path param) |

@@ -60,7 +60,19 @@ async def VLR_news():
 @router.get("/stats")
 async def VLR_stats(
     region: str = Query(..., description="Region: all, americas, emea, pacific, china, intl (deprecated aliases accepted)"),
-    timespan: str = Query(..., description="Timespan (30, 60, 90, or all)"),
+    timespan: str | None = Query(None, description="Legacy window: 30, 60, 90, or all. Either timespan or span is required."),
+    span: str | None = Query(None, description="VLR span: 30d, 60d, 90d, custom, a year from 2020 onward, or all"),
+    from_date: str | None = Query(None, alias="from", description="Custom span start date (YYYY-MM-DD)"),
+    to_date: str | None = Query(None, alias="to", description="Custom span end date (YYYY-MM-DD)"),
+    tier: str = Query("all", description="Tier: all, vct, vcl, t3, gc, cg, or off"),
+    side: str = Query("all", description="Side: all, t, or ct"),
+    role: str = Query("all", description="Role filter"),
+    agent: str = Query("all", description="Agent slug or all"),
+    map_id: str = Query("all", description="VLR map ID or all"),
+    min_rounds: int = Query(200, description="Minimum rounds (historical API default: 200)"),
+    min_rating: int = Query(1550, description="Minimum rating threshold (historical API default: 1550)"),
+    sort: str = Query("rating2", description="VLR data-col to sort by"),
+    sort_dir: str = Query("desc", alias="dir", description="Sort direction: asc or desc"),
 ):
     """
     Get VLR stats with query parameters.
@@ -73,7 +85,22 @@ async def VLR_stats(
         ap, kr, jp, oce -> pacific\n
         cn -> china\n
     """
-    return await get_stats_data(region, timespan)
+    return await get_stats_data(
+        region,
+        timespan,
+        span=span,
+        from_date=from_date,
+        to_date=to_date,
+        tier=tier,
+        side=side,
+        role=role,
+        agent=agent,
+        map_id=map_id,
+        min_rounds=min_rounds,
+        min_rating=min_rating,
+        sort=sort,
+        direction=sort_dir,
+    )
 
 
 @router.get("/rankings")

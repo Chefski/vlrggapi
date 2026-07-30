@@ -8,8 +8,10 @@ from selectolax.parser import HTMLParser
 import api.scrapers.stats as stats_mod
 from api.scrapers.stats import (
     _build_column_map,
+    _filter_mismatches,
     _parse_stats_row,
     _selected_region,
+    normalize_stats_filters,
     vlr_stats,
 )
 from utils.cache_manager import cache_manager
@@ -64,7 +66,7 @@ NEW_DATA_COLS = [
 # Realistic per-column cell text for one row.
 NEW_ROW_VALUES = {
     "maps": "11", "rnd": "228", "rating2": "1.37", "acs": "247", "kd": "1.15",
-    "kast": "73%", "adr": "155.0", "kpr": "0.82", "apr": "0.30", "fkfd": "+5",
+    "kast": "73%", "adr": "155.0", "kpr": "0.82", "apr": "0.30", "fkfd": "1.25",
     "fbpr": "0.14", "fdpr": "0.10", "hsp": "28%", "clp": "20%", "cl": "7/35",
     "kmax": "30", "k": "180", "d": "150", "a": "60", "fk": "25", "fd": "20",
 }
@@ -87,12 +89,22 @@ def _new_row(values=None, org="NRG", player="brawk", org_class="st-pl-country"):
     """Build a <tr> whose <td> order matches NEW_DATA_COLS (player first)."""
     values = values if values is not None else NEW_ROW_VALUES
     tds = [
-        f'<td class="mod-player"><a><div class="text-of">{player}</div>'
+        f'<td class="mod-player"><a href="/player/1234/{player}">'
+        f'<i class="flag mod-us"></i><div class="text-of">{player}</div>'
         f'<div class="{org_class}">{org}</div></a></td>'
     ]
     for col in NEW_DATA_COLS:
         if col == "agents":
-            tds.append('<td class="mod-agents"><img src="/img/vlr/game/agents/jett.png"></td>')
+            tds.append(
+                '<td class="mod-agents"><span class="st-agent">'
+                '<img src="/img/vlr/game/agents/jett.png">'
+                '<span class="st-agent-n">100%</span></span></td>'
+            )
+        elif col == "kmax":
+            tds.append(
+                '<td><a href="/5555/example-match/?game=7777">'
+                f"{values.get(col, '')}</a></td>"
+            )
         else:
             tds.append(f"<td>{values.get(col, '')}</td>")
     return "<tr>" + "".join(tds) + "</tr>"
@@ -175,6 +187,15 @@ def _install_fake_fetch(monkeypatch) -> FakeFetch:
     return fetch
 
 
+def _cached_stats(region="americas", timespan="60", **kwargs):
+    filters = normalize_stats_filters(region, timespan, **kwargs)
+    return cache_manager.get(
+        stats_mod.CACHE_TTL_STATS,
+        "stats",
+        filters.upstream_query(),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Row / column-map parsing
 # ---------------------------------------------------------------------------
@@ -185,8 +206,15 @@ def test_parse_stats_row_legacy_positional_fallback():
 
     assert _parse_stats_row(row) == {
         "player": "TenZ Prime",
+        "player_id": "",
+        "player_url": "",
+        "country": "",
         "org": "Team Liquid",
         "agents": ["jett", "omen"],
+        "agent_usage": [
+            {"agent": "jett", "usage": ""},
+            {"agent": "omen", "usage": ""},
+        ],
         "rounds_played": "442",
         "rating": "1.36",
         "average_combat_score": "248.4",
@@ -200,6 +228,9 @@ def test_parse_stats_row_legacy_positional_fallback():
         "headshot_percentage": "33%",
         "clutch_success_percentage": "16%",
         "clutch_attempts": "9/57",
+        "max_kills_match_id": "",
+        "max_kills_game_id": "",
+        "max_kills_match_url": "",
     }
 
 
@@ -215,6 +246,21 @@ def test_parse_stats_row_new_markup_header_keyed():
     assert parsed["rating"] == "1.37"
     assert parsed["average_combat_score"] == "247"
     assert parsed["org"] == "NRG"
+    assert parsed["player_id"] == "1234"
+    assert parsed["player_url"] == "https://www.vlr.gg/player/1234/brawk"
+    assert parsed["country"] == "us"
+    assert parsed["agent_usage"] == [{"agent": "jett", "usage": "100%"}]
+    assert parsed["maps_played"] == "11"
+    assert parsed["first_kill_death_ratio"] == "1.25"
+    assert parsed["max_kills"] == "30"
+    assert parsed["max_kills_match_id"] == "5555"
+    assert parsed["max_kills_game_id"] == "7777"
+    assert parsed["max_kills_match_url"] == "https://www.vlr.gg/5555/example-match/?game=7777"
+    assert parsed["kills"] == "180"
+    assert parsed["deaths"] == "150"
+    assert parsed["assists"] == "60"
+    assert parsed["first_kills"] == "25"
+    assert parsed["first_deaths"] == "20"
     # clutch_attempts must come from the ``cl`` key, not a positional index.
     assert parsed["clutch_attempts"] == "7/35"
     # the inserted ``maps`` column must NOT leak into rounds_played.
@@ -292,14 +338,13 @@ async def test_vlr_stats_new_markup_end_to_end(monkeypatch):
     assert seg[0]["average_combat_score"] == "247"
     assert seg[0]["org"] == "NRG"
     assert seg[0]["clutch_attempts"] == "7/35"
-    # output key set is unchanged from upstream's contract
-    assert set(seg[0].keys()) == {
-        "player", "org", "agents", "rounds_played", "rating",
-        "average_combat_score", "kill_deaths", "kill_assists_survived_traded",
-        "average_damage_per_round", "kills_per_round", "assists_per_round",
-        "first_kills_per_round", "first_deaths_per_round", "headshot_percentage",
-        "clutch_success_percentage", "clutch_attempts",
-    }
+    assert seg[0]["player_id"] == "1234"
+    assert seg[0]["maps_played"] == "11"
+    assert seg[0]["max_kills_match_id"] == "5555"
+    assert seg[0]["kills"] == "180"
+    assert data["data"]["filters"]["span"] == "60d"
+    assert data["data"]["filters"]["min_rounds"] == 200
+    assert data["data"]["filters"]["min_rating"] == 1550
     # prime fired first, exactly once, before the data fetch
     assert _region_of(fetch.calls[0]) is None
     assert "region=americas" in fetch.calls[1]
@@ -335,7 +380,7 @@ async def test_vlr_stats_missing_required_key_raises(monkeypatch):
         await vlr_stats("americas", "60")
     assert exc.value.status_code == 502
     # nothing partial-parsed reached the cache
-    assert cache_manager.get(stats_mod.CACHE_TTL_STATS, "stats", "americas", "60") is None
+    assert _cached_stats() is None
 
 
 @pytest.mark.anyio
@@ -363,7 +408,7 @@ async def test_failing_prime_raises_and_caches_nothing(monkeypatch):
     assert exc.value.status_code == 503
     # only the prime was attempted; no data fetch, nothing cached
     assert all(_region_of(c) is None for c in fetch.calls)
-    assert cache_manager.get(stats_mod.CACHE_TTL_STATS, "stats", "americas", "60") is None
+    assert _cached_stats() is None
     assert stats_mod._primed is False
 
 
@@ -382,7 +427,7 @@ async def test_region_mismatch_retries_then_raises(monkeypatch):
     assert len(prime_calls) == 2
     assert len(data_calls) == 2
     # the mismatched response was never cached
-    assert cache_manager.get(stats_mod.CACHE_TTL_STATS, "stats", "americas", "60") is None
+    assert _cached_stats() is None
 
 
 @pytest.mark.anyio
@@ -410,8 +455,9 @@ async def test_alias_normalizes_before_cache_key(monkeypatch):
     await vlr_stats("na", "60")
 
     # cache entry is keyed on the canonical region, not the alias
-    assert cache_manager.get(stats_mod.CACHE_TTL_STATS, "stats", "americas", "60") is not None
-    assert cache_manager.get(stats_mod.CACHE_TTL_STATS, "stats", "na", "60") is None
+    assert _cached_stats("americas") is not None
+    # The alias normalizes to the same cache key.
+    assert _cached_stats("na") is not None
     # the fetched URL carries the canonical region
     data_calls = [c for c in fetch.calls if _region_of(c) is not None]
     assert "region=americas" in data_calls[0]
@@ -496,3 +542,158 @@ def test_rankings_region_americas_still_400():
     with pytest.raises(HTTPException) as exc:
         validate_region("americas")
     assert exc.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Current vlr.gg filter contract
+# ---------------------------------------------------------------------------
+
+def test_normalize_stats_filters_preserves_legacy_defaults():
+    filters = normalize_stats_filters("na", "60")
+
+    assert filters.region == "americas"
+    assert filters.span == "60d"
+    assert filters.tier == "all"
+    assert filters.min_rounds == 200
+    assert filters.min_rating == 1550
+
+
+def test_normalize_stats_filters_accepts_current_custom_contract():
+    filters = normalize_stats_filters(
+        "emea",
+        span="custom",
+        from_date="2026-01-01",
+        to_date="2026-06-30",
+        tier="vct",
+        side="ct",
+        role="sentinel",
+        agent="Killjoy",
+        map_id="12",
+        min_rounds=100,
+        min_rating=0,
+        sort="kmax",
+        direction="asc",
+    )
+
+    assert filters.agent == "killjoy"
+    assert filters.upstream_query() == {
+        "sort": "kmax",
+        "dir": "asc",
+        "tier": "vct",
+        "region": "emea",
+        "span": "custom",
+        "side": "ct",
+        "role": "sentinel",
+        "agent": "killjoy",
+        "map_id": "12",
+        "min_rounds": 100,
+        "min_rating": 0,
+        "from": "2026-01-01",
+        "to": "2026-06-30",
+    }
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"span": "custom", "from_date": "2026-01-01"},
+        {"span": "custom", "from_date": "2026-07-02", "to_date": "2026-07-01"},
+        {"span": "60d", "from_date": "2026-01-01", "to_date": "2026-02-01"},
+        {"span": "2019"},
+        {"span": "never"},
+        {"span": "60d", "tier": "tier-one"},
+        {"span": "60d", "side": "attack"},
+        {"span": "60d", "role": "flex"},
+        {"span": "60d", "agent": "bad agent"},
+        {"span": "60d", "map_id": "split!"},
+        {"span": "60d", "min_rounds": 1000},
+        {"span": "60d", "min_rating": 1600},
+        {"span": "60d", "sort": "player"},
+        {"span": "60d", "direction": "sideways"},
+    ],
+)
+def test_normalize_stats_filters_rejects_invalid_contract(kwargs):
+    with pytest.raises(HTTPException) as exc:
+        normalize_stats_filters("americas", **kwargs)
+    assert exc.value.status_code == 400
+
+
+def test_normalize_stats_filters_rejects_conflicting_windows():
+    with pytest.raises(HTTPException) as exc:
+        normalize_stats_filters("americas", "30", span="60d")
+    assert exc.value.status_code == 400
+    assert "Conflicting" in exc.value.detail
+
+
+def test_filter_mismatches_checks_all_echoed_controls():
+    filters = normalize_stats_filters(
+        "americas",
+        span="60d",
+        tier="vct",
+        min_rounds=100,
+        min_rating=0,
+    )
+    html = HTMLParser(
+        '<input name="sort" value="rating2">'
+        '<input name="dir" value="desc">'
+        '<select name="tier"><option value="all" selected>All</option></select>'
+        '<select name="region"><option value="americas" selected>Americas</option></select>'
+        '<select name="span"><option value="60d" selected>60 days</option></select>'
+        '<input name="min_rounds" value="100">'
+        '<select name="min_rating"><option value="0" selected>All</option></select>'
+    )
+
+    assert _filter_mismatches(html, filters) == {"tier": ("vct", "all")}
+
+
+@pytest.mark.anyio
+async def test_vlr_stats_uses_current_query_names_and_filter_cache_key(monkeypatch):
+    fetch = _install_fake_fetch(monkeypatch)
+
+    first = await vlr_stats(
+        "americas",
+        span="60d",
+        tier="vct",
+        agent="jett",
+        min_rounds=100,
+        min_rating=0,
+        sort="maps",
+        direction="asc",
+    )
+    data_url = next(call for call in fetch.calls if _region_of(call) is not None)
+
+    assert "span=60d" in data_url
+    assert "timespan=" not in data_url
+    assert "tier=vct" in data_url
+    assert "agent=jett" in data_url
+    assert "min_rounds=100" in data_url
+    assert "min_rating=0" in data_url
+    assert "sort=maps" in data_url
+    assert "dir=asc" in data_url
+    assert first["data"]["filters"]["tier"] == "vct"
+
+    before = len(fetch.calls)
+    await vlr_stats(
+        "americas",
+        span="60d",
+        tier="vct",
+        agent="jett",
+        min_rounds=100,
+        min_rating=0,
+        sort="maps",
+        direction="asc",
+    )
+    assert len(fetch.calls) == before
+
+    await vlr_stats(
+        "americas",
+        span="60d",
+        tier="gc",
+        agent="jett",
+        min_rounds=100,
+        min_rating=0,
+        sort="maps",
+        direction="asc",
+    )
+    assert len(fetch.calls) == before + 1
