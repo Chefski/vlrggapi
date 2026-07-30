@@ -14,6 +14,7 @@ from routers.shared_handlers import (
     get_health_data,
     get_match_data,
     get_match_detail_data,
+    get_news_article_data,
     get_news_data,
     get_player_data,
     get_player_matches_data,
@@ -24,7 +25,7 @@ from routers.shared_handlers import (
     get_team_transactions_data,
     to_legacy_rankings_shape,
 )
-from utils.constants import MAX_MATCH_QUERY_BOUND
+from utils.constants import MAX_MATCH_QUERY_BOUND, MAX_NEWS_PAGE
 from utils.error_handling import (
     validate_id_param,
     validate_match_workload,
@@ -58,8 +59,16 @@ def _strip_match_team_ids(payload: dict) -> dict:
 
 
 @router.get("/news")
-async def VLR_news():
-    return await get_news_data()
+async def VLR_news(
+    page: int = Query(1, description="Archive page number", ge=1, le=MAX_NEWS_PAGE),
+):
+    return await get_news_data(page)
+
+
+@router.get("/news/{article_id}")
+async def VLR_news_article(article_id: str):
+    validate_id_param(article_id, "article_id")
+    return await get_news_article_data(article_id)
 
 
 @router.get("/stats")

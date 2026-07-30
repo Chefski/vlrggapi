@@ -15,6 +15,7 @@ from routers.shared_handlers import (
     get_health_data,
     get_match_data,
     get_match_detail_data,
+    get_news_article_data,
     get_news_data,
     get_player_data,
     get_player_matches_data,
@@ -26,7 +27,7 @@ from routers.shared_handlers import (
     get_team_stats_data,
     get_team_transactions_data,
 )
-from utils.constants import MAX_MATCH_QUERY_BOUND
+from utils.constants import MAX_MATCH_QUERY_BOUND, MAX_NEWS_PAGE
 from utils.error_handling import (
     validate_event_query,
     validate_id_param,
@@ -55,10 +56,18 @@ def _wrap_v2(scraper_result: dict) -> dict:
     return {"status": "success", "data": scraper_result}
 
 
-@router.get("/news", response_model=V2Response, summary="Latest news", description="Get the latest Valorant esports news headlines from VLR.GG.")
-async def v2_news():
-    result = await get_news_data()
+@router.get("/news", response_model=V2Response, summary="News archive", description="Browse the paginated VLR.GG news archive with stable article IDs, publication dates, authors, and regions.")
+async def v2_news(
+    page: int = Query(1, description="Archive page number", ge=1, le=MAX_NEWS_PAGE),
+):
+    result = await get_news_data(page)
     return _wrap_v2(result)
+
+
+@router.get("/news/{article_id}", response_model=V2Response, summary="News article", description="Get a full VLR.GG news article with exact publication metadata, author and event context, formatted content, links, and media.")
+async def v2_news_article(article_id: str):
+    validate_id_param(article_id, "article_id")
+    return _wrap_v2(await get_news_article_data(article_id))
 
 
 @router.get("/stats", response_model=V2Response, summary="Player stats", description="Get player statistics with the current VLR.GG tier, region, date, side, role, agent, map, threshold, and sort filters.")
