@@ -16,8 +16,8 @@ from utils.constants import (
     VLR_BASE_URL,
 )
 from utils.error_handling import handle_scraper_errors, upstream_error_payload
-from utils.html_parsers import HTMLParser, parse_html
-from utils.http_client import fetch_with_retries, get_http_client
+from utils.html_parsers import HTMLParser, add_image_variants, parse_html
+from utils.http_client import fetch_theme_variants, fetch_with_retries, get_http_client
 
 from .parsers import (
     _is_live,
@@ -101,12 +101,13 @@ async def vlr_match_detail(match_id: str) -> dict:
 
         client = get_http_client()
 
-        base_resp = await fetch_with_retries(base_url, client=client)
-        http_status = base_resp.status_code
+        light_resp, dark_resp = await fetch_theme_variants(base_url, client=client)
+        http_status = light_resp.status_code
         if http_status >= 400:
             return upstream_error_payload(http_status, f"match detail {match_id}")
 
-        base_html = parse_html(base_resp.text)
+        base_html = parse_html(light_resp.text)
+        dark_html = parse_html(dark_resp.text)
 
         game_ids = _extract_game_ids(base_html)
         first_game_id = game_ids[0] if game_ids else None
@@ -147,8 +148,16 @@ async def vlr_match_detail(match_id: str) -> dict:
                     economy_by_game[game_id] = _parse_economy(tab_html)
 
         event_info = _parse_event_info(base_html)
+        add_image_variants(event_info, _parse_event_info(dark_html))
         header_info = _parse_match_header(base_html)
         teams = _parse_teams(base_html)
+        dark_teams = _parse_teams(dark_html)
+        dark_teams_by_id = {team["id"]: team for team in dark_teams if team["id"]}
+        for index, team in enumerate(teams):
+            dark_team = dark_teams_by_id.get(team["id"])
+            if dark_team is None and index < len(dark_teams):
+                dark_team = dark_teams[index]
+            add_image_variants(team, dark_team)
         streams, vods = _parse_streams_vods(base_html)
         maps = _parse_maps(base_html)
         h2h = _parse_head_to_head(base_html)

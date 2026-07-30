@@ -21,8 +21,8 @@ from utils.constants import (
     VLR_BASE_URL,
 )
 from utils.error_handling import handle_scraper_errors
-from utils.html_parsers import parse_html
-from utils.http_client import fetch_with_retries, get_http_client
+from utils.html_parsers import add_image_variants, parse_html
+from utils.http_client import fetch_theme_variants, fetch_with_retries, get_http_client
 
 from .parsers import (
     _normalize_ws,
@@ -99,8 +99,8 @@ async def vlr_team(team_id: str) -> dict:
     async def build():
         url = f"{VLR_BASE_URL}/team/{team_id}"
         client = get_http_client()
-        resp = await fetch_with_retries(url, client=client)
-        status = resp.status_code
+        light_resp, dark_resp = await fetch_theme_variants(url, client=client)
+        status = light_resp.status_code
 
         if status >= 400:
             logger.warning("Non-200 response %d for team %s", status, team_id)
@@ -109,9 +109,14 @@ async def vlr_team(team_id: str) -> dict:
                 detail=f"VLR.GG returned status {status} for team {team_id}",
             )
 
-        html = parse_html(resp.text)
+        html = parse_html(light_resp.text)
+        dark_html = parse_html(dark_resp.text)
 
         header_info = _parse_team_header(html, team_id)
+        add_image_variants(
+            header_info,
+            _parse_team_header(dark_html, team_id),
+        )
         rating = _parse_rating_info(html)
         roster = _parse_roster(html)
         event_placements, total_winnings = _parse_event_placements(html)

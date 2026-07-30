@@ -7,6 +7,7 @@ from api.scrapers.teams import (
     vlr_team_transactions,
 )
 from api.scrapers.teams.parsers import _extract_prize_from_text
+from utils.cache_manager import cache_manager
 
 
 class FakeResponse:
@@ -25,6 +26,36 @@ class FakeAsyncClient:
     async def get(self, url: str, timeout=None, headers=None):
         self.calls.append((url, timeout))
         return self.response
+
+
+@pytest.mark.anyio
+async def test_team_profile_returns_light_and_dark_logo_variants(monkeypatch):
+    cache_manager.clear_all()
+    light_html = """
+    <html><div class="team-header">
+      <div class="team-header-logo"><img src="//owcdn.net/img/team-light.png"></div>
+      <div class="team-header-name"><h1>Example</h1><h2>EX</h2></div>
+    </div></html>
+    """
+    dark_html = light_html.replace("team-light.png", "team-dark.png")
+
+    async def fake_fetch_theme_variants(url, *, client=None):
+        assert url == "https://www.vlr.gg/team/77"
+        return FakeResponse(200, light_html), FakeResponse(200, dark_html)
+
+    monkeypatch.setattr(
+        "api.scrapers.teams.crawlers.fetch_theme_variants",
+        fake_fetch_theme_variants,
+    )
+    monkeypatch.setattr("api.scrapers.teams.crawlers.get_http_client", lambda: object())
+
+    result = await vlr_team("77")
+    team = result["data"]["segments"][0]
+
+    assert team["logo"] == "https://owcdn.net/img/team-light.png"
+    assert team["logo_light"] == "https://owcdn.net/img/team-light.png"
+    assert team["logo_dark"] == "https://owcdn.net/img/team-dark.png"
+    cache_manager.clear_all()
 
 
 @pytest.mark.parametrize(

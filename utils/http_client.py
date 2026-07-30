@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
+VLR_THEME_COOKIES = {
+    "light": "settings=%7B%22dark_mode%22%3A0%7D",
+    "dark": "settings=%7B%22dark_mode%22%3A1%7D",
+}
+
 
 class CircuitOpenError(Exception):
     """Raised when the circuit breaker is open for a host."""
@@ -143,6 +148,7 @@ async def fetch_with_retries(
     request_delay: float = DEFAULT_REQUEST_DELAY,
     use_etag: bool = False,
     extra_headers: dict[str, str] | None = None,
+    record_circuit_outcome: bool = True,
 ) -> httpx.Response:
     """Fetch a URL with bounded retries for transient upstream failures.
 
@@ -154,6 +160,10 @@ async def fetch_with_retries(
     When use_etag is True, automatically sends If-None-Match and stores ETag
     from 200 responses. 304 responses are returned as-is (caller should check
     response.status_code and serve cached content).
+
+    Set ``record_circuit_outcome`` to False for optional requests whose success
+    or failure must not alter shared host health. The request still respects an
+    already-open circuit.
     """
     if not circuit_breaker.allow_request(url):
         raise CircuitOpenError(
@@ -178,7 +188,8 @@ async def fetch_with_retries(
             response = await client.get(url, timeout=timeout, headers=request_headers if request_headers else None)
         except httpx.RequestError as exc:
             if attempt >= retries:
-                circuit_breaker.record_failure(url)
+                if record_circuit_outcome:
+                    circuit_breaker.record_failure(url)
                 raise
             logger.warning(
                 "Retrying %s after request error on attempt %d/%d: %s",
@@ -195,15 +206,17 @@ async def fetch_with_retries(
                 if etag is not None:
                     _etags[url] = etag
             elif response.status_code == 304:
-                circuit_breaker.record_success(url)
+                if record_circuit_outcome:
+                    circuit_breaker.record_success(url)
                 return response
 
         empty_body = response.status_code == 200 and len(response.content) < MIN_RESPONSE_SIZE
 
         if not empty_body and (response.status_code not in RETRYABLE_STATUS_CODES or attempt >= retries):
             if response.status_code not in RETRYABLE_STATUS_CODES:
-                circuit_breaker.record_success(url)
-            elif response.status_code != 429:
+                if record_circuit_outcome:
+                    circuit_breaker.record_success(url)
+            elif response.status_code != 429 and record_circuit_outcome:
                 circuit_breaker.record_failure(url)
             return response
 
@@ -230,6 +243,61 @@ async def fetch_with_retries(
     if last_response is not None:
         return last_response
     raise RuntimeError(f"Failed to fetch {url} without producing a response")
+
+
+async def fetch_theme_variants(
+    url: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+    timeout: int | float | httpx.Timeout | None = None,
+    max_retries: int = DEFAULT_RETRIES,
+    request_delay: float = DEFAULT_REQUEST_DELAY,
+) -> tuple[httpx.Response, httpx.Response]:
+    """Fetch VLR.GG's light and dark variants of the same page.
+
+    VLR.GG chooses theme-specific logo assets server-side from the ``settings``
+    cookie. Both requests use explicit cookie values so the singleton client's
+    state cannot make the result depend on an earlier request.
+
+    The light response remains authoritative for status and page content. If
+    only the optional dark request fails, callers receive the light response as
+    both variants so existing endpoints remain available with a safe fallback.
+    """
+    client = client or get_http_client()
+
+    async def fetch(appearance: str) -> httpx.Response:
+        return await fetch_with_retries(
+            url,
+            client=client,
+            timeout=timeout,
+            max_retries=max_retries,
+            request_delay=request_delay,
+            extra_headers={"Cookie": VLR_THEME_COOKIES[appearance]},
+            record_circuit_outcome=appearance == "light",
+        )
+
+    light_result, dark_result = await asyncio.gather(
+        fetch("light"),
+        fetch("dark"),
+        return_exceptions=True,
+    )
+
+    if isinstance(light_result, Exception):
+        raise light_result
+
+    if isinstance(dark_result, Exception):
+        logger.warning("Dark-theme fetch failed for %s: %s", url, dark_result)
+        return light_result, light_result
+
+    if dark_result.status_code >= 400 and light_result.status_code < 400:
+        logger.warning(
+            "Dark-theme fetch for %s returned status %d; using light fallback",
+            url,
+            dark_result.status_code,
+        )
+        return light_result, light_result
+
+    return light_result, dark_result
 
 
 async def close_http_client():

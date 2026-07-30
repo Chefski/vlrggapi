@@ -4,8 +4,8 @@ import re
 from utils.cache_manager import cache_manager
 from utils.constants import CACHE_TTL_RANKINGS, VLR_RANKINGS_URL
 from utils.error_handling import handle_scraper_errors, raise_for_upstream_status, validate_region
-from utils.html_parsers import parse_html
-from utils.http_client import fetch_with_retries, get_http_client
+from utils.html_parsers import add_image_variants, parse_html
+from utils.http_client import fetch_theme_variants, get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,51 @@ def _extract_last_played_summary(item) -> tuple[str, str, str]:
     return last_played, last_played_team, opponent_logo
 
 
+def _parse_rankings(html) -> list[dict]:
+    """Parse ranking rows from one appearance variant of the page."""
+    result = []
+    for item in html.css("div.rank-item"):
+        rank_elem = item.css_first("div.rank-item-rank-num")
+        rank = _normalize_text(rank_elem.text()) if rank_elem else ""
+        team = _extract_ranked_team_name(item)
+        team_link = item.css_first("a.rank-item-team")
+        team_logo = team_link.css_first("img") if team_link else None
+        logo = team_logo.attributes.get("src", "") if team_logo else ""
+        logo = re.sub(r"/img/vlr/tmp/vlr.png", "", logo)
+        country = _normalize_text(item.css_first("div.rank-item-team-country").text())
+        last_played, last_played_team, last_played_team_logo = _extract_last_played_summary(item)
+
+        record_elems = item.css("div.rank-item-record")
+        record = _normalize_text(record_elems[0].text()) if record_elems else ""
+        recent_record = _normalize_text(record_elems[1].text()) if len(record_elems) > 1 else ""
+
+        earnings = _normalize_text(item.css_first("div.rank-item-earnings").text())
+
+        rating_elem = item.css_first("div.rank-item-rating")
+        rating = _normalize_text(rating_elem.text()) if rating_elem else ""
+
+        streak_elem = item.css_first("div.rank-item-streak")
+        streak = _normalize_text(streak_elem.text()) if streak_elem else ""
+
+        result.append(
+            {
+                "rank": rank,
+                "team": team,
+                "country": country,
+                "rating": rating,
+                "streak": streak,
+                "last_played": last_played,
+                "last_played_team": last_played_team,
+                "last_played_team_logo": last_played_team_logo,
+                "record": record,
+                "recent_record": recent_record,
+                "earnings": earnings,
+                "logo": logo,
+            }
+        )
+    return result
+
+
 @handle_scraper_errors
 async def vlr_rankings(region_key):
     async def build():
@@ -104,52 +149,20 @@ async def vlr_rankings(region_key):
         url = f"{VLR_RANKINGS_URL}/{region_name}"
 
         client = get_http_client()
-        resp = await fetch_with_retries(url, client=client)
-        status = resp.status_code
+        light_resp, dark_resp = await fetch_theme_variants(url, client=client)
+        status = light_resp.status_code
         raise_for_upstream_status(status, "rankings")
 
-        html = parse_html(resp.text)
+        result = _parse_rankings(parse_html(light_resp.text))
+        dark_result = _parse_rankings(parse_html(dark_resp.text))
+        dark_by_team = {item["team"]: item for item in dark_result if item["team"]}
 
-        result = []
-        for item in html.css("div.rank-item"):
-            rank_elem = item.css_first("div.rank-item-rank-num")
-            rank = _normalize_text(rank_elem.text()) if rank_elem else ""
-            team = _extract_ranked_team_name(item)
-            team_link = item.css_first("a.rank-item-team")
-            team_logo = team_link.css_first("img") if team_link else None
-            logo = team_logo.attributes.get("src", "") if team_logo else ""
-            logo = re.sub(r"/img/vlr/tmp/vlr.png", "", logo)
-            country = _normalize_text(item.css_first("div.rank-item-team-country").text())
-            last_played, last_played_team, last_played_team_logo = _extract_last_played_summary(item)
-
-            record_elems = item.css("div.rank-item-record")
-            record = _normalize_text(record_elems[0].text()) if record_elems else ""
-            recent_record = _normalize_text(record_elems[1].text()) if len(record_elems) > 1 else ""
-
-            earnings = _normalize_text(item.css_first("div.rank-item-earnings").text())
-
-            rating_elem = item.css_first("div.rank-item-rating")
-            rating = _normalize_text(rating_elem.text()) if rating_elem else ""
-
-            streak_elem = item.css_first("div.rank-item-streak")
-            streak = _normalize_text(streak_elem.text()) if streak_elem else ""
-
-            result.append(
-                {
-                    "rank": rank,
-                    "team": team,
-                    "country": country,
-                    "rating": rating,
-                    "streak": streak,
-                    "last_played": last_played,
-                    "last_played_team": last_played_team,
-                    "last_played_team_logo": last_played_team_logo,
-                    "record": record,
-                    "recent_record": recent_record,
-                    "earnings": earnings,
-                    "logo": logo,
-                }
-            )
+        for index, item in enumerate(result):
+            dark_item = dark_by_team.get(item["team"])
+            if dark_item is None and index < len(dark_result):
+                dark_item = dark_result[index]
+            add_image_variants(item, dark_item)
+            add_image_variants(item, dark_item, "last_played_team_logo")
 
         data = {"data": {"status": status, "segments": result}}
 
