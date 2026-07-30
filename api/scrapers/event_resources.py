@@ -135,7 +135,9 @@ def _event_filter_mismatches(
     for name, requested_value in expected.items():
         applied = _echoed_filter(html, name)
         requested = str(requested_value)
-        if applied is not None and applied != requested:
+        if applied is None:
+            mismatches[name] = (requested, "<missing>")
+        elif applied != requested:
             mismatches[name] = (requested, applied)
     return mismatches
 

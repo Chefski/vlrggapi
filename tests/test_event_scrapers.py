@@ -118,6 +118,14 @@ DETAIL_HTML = """
 
 STATS_HTML = """
 <html><body>
+  <input type="hidden" name="sort" value="rating2">
+  <input type="hidden" name="dir" value="desc">
+  <select name="side"><option value="ct" selected>Defense</option></select>
+  <select name="role"><option value="all" selected>All roles</option></select>
+  <select name="agent"><option value="all" selected>All agents</option></select>
+  <select name="map_id"><option value="all" selected>All maps</option></select>
+  <input name="min_rounds" value="0">
+  <input type="hidden" name="exclude" value="551">
   <div class="st-ss-group"><div class="st-ss-lbl"><span>Group Stage</span><a data-series-id="55"></a></div>
     <label><input class="st-ss" value="551" checked><span>Week 1</span></label>
     <label><input class="st-ss" value="552"><span>Week 2</span></label>
@@ -138,6 +146,7 @@ STATS_HTML = """
 
 AGENTS_HTML = """
 <html><body><form>
+  <input type="hidden" name="exclude" value="552">
   <div><div><div class="wf-label">Group Stage</div><a class="group-tag-btn" data-series-id="55"></a></div>
     <div><div class="wf-tag-btn" data-subseries-id="551">Week 1</div><div class="wf-tag-btn mod-unselected" data-subseries-id="552">Week 2</div></div>
   </div>
@@ -321,7 +330,7 @@ def test_event_stats_filter_validation():
         normalize_excluded_series("1..2")
 
 
-def test_event_filter_mismatches_checks_echoed_controls_only():
+def test_event_filter_mismatches_requires_every_control():
     html = HTMLParser(
         """
         <select name="side"><option value="all" selected>All</option></select>
@@ -331,7 +340,10 @@ def test_event_filter_mismatches_checks_echoed_controls_only():
     assert _event_filter_mismatches(
         html,
         {"side": "ct", "min_rounds": 100, "agent": "killjoy"},
-    ) == {"side": ("ct", "all")}
+    ) == {
+        "side": ("ct", "all"),
+        "agent": ("killjoy", "<missing>"),
+    }
 
 
 @pytest.mark.anyio
