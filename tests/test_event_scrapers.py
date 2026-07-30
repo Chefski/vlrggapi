@@ -366,6 +366,20 @@ async def test_event_detail_crawler_uses_stage_path_and_caches(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_event_detail_rejects_upstream_stage_fallback(monkeypatch):
+    async def fake_fetch(url, *, client=None, **kwargs):
+        return FakeResponse(DETAIL_HTML)
+
+    monkeypatch.setattr(detail_mod, "fetch_with_retries", fake_fetch)
+    monkeypatch.setattr(detail_mod, "get_http_client", lambda: object())
+
+    with pytest.raises(HTTPException) as exc:
+        await vlr_event_detail("9", "not-a-real-stage")
+    assert exc.value.status_code == 400
+    assert "not-a-real-stage" in exc.value.detail
+
+
+@pytest.mark.anyio
 async def test_event_resource_crawlers(monkeypatch):
     calls = []
 

@@ -622,6 +622,14 @@ async def vlr_event_detail(event_id: str, stage: str | None = None) -> dict:
         groups = _parse_event_groups(html)
         brackets = _parse_event_brackets(html)
         active_stage = next((item for item in stages if item["active"]), None)
+        if stage and (active_stage is None or active_stage["slug"] != stage):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid event stage '{stage}' for event {event_id}. "
+                    "Use a stage slug returned by the event endpoint."
+                ),
+            )
         id_mapper.register_event(header["name"], event_id)
 
         data = {
