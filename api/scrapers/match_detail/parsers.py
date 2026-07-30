@@ -830,9 +830,20 @@ def _parse_head_to_head(
     h2h: list[dict] = []
     current_teams = current_teams or []
     teams_by_logo = {
-        team.get("logo", ""): team
+        logo: team
         for team in current_teams
-        if team.get("logo")
+        for logo in (
+            team.get("logo", ""),
+            team.get("logo_light", ""),
+            team.get("logo_dark", ""),
+        )
+        if logo
+    }
+    teams_by_name = {
+        value.casefold(): team
+        for team in current_teams
+        for value in (team.get("name", ""), team.get("tag", ""))
+        if value
     }
 
     container = html.css_first(".match-h2h-matches")
@@ -879,15 +890,27 @@ def _parse_head_to_head(
             # Old format: .match-h2h-matches rows
             team_elems = row.css(".match-h2h-matches-team")
             teams = []
-            for te in team_elems:
+            for index, te in enumerate(team_elems):
                 cls = te.attributes.get("class", "")
                 is_winner = "mod-win" in cls
                 logo = normalize_image_url(te.attributes.get("src", ""))
-                matched_team = teams_by_logo.get(logo, {})
+                rendered_name = (
+                    extract_text_content(te)
+                    or te.attributes.get("alt", "")
+                    or te.attributes.get("title", "")
+                )
+                matched_team = teams_by_logo.get(logo) or teams_by_name.get(
+                    rendered_name.casefold()
+                )
+                if matched_team is None and index < len(current_teams):
+                    # Dedicated H2H rows render teams in current-match order,
+                    # so position remains stable when historical branding changes.
+                    matched_team = current_teams[index]
+                matched_team = matched_team or {}
                 teams.append(
                     {
                         "id": matched_team.get("id", ""),
-                        "name": matched_team.get("name", "") or extract_text_content(te),
+                        "name": matched_team.get("name", "") or rendered_name,
                         "logo": logo,
                         "is_winner": is_winner,
                     }

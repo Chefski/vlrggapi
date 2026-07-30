@@ -549,8 +549,10 @@ def test_head_to_head_prefers_dedicated_match_history():
         </a>
         <div class="match-h2h-matches">
           <a class="wf-module-item" href="/675342/bilibili-gaming-vs-nova">
-            <img class="match-h2h-matches-team mod-loss" src="//owcdn.net/img/blg.png">
-            <img class="match-h2h-matches-team mod-win" src="//owcdn.net/img/nova.png">
+            <img class="match-h2h-matches-team mod-loss" alt="Bilibili Gaming"
+              src="//owcdn.net/img/historical-blg.png">
+            <img class="match-h2h-matches-team mod-win" alt="Nova Esports"
+              src="//owcdn.net/img/historical-nova.png">
             <div class="match-h2h-matches-score">1 2</div>
             <div class="match-h2h-matches-event-name">EWC 2026: China Qualifier</div>
             <div class="match-h2h-matches-event-series">UBF</div>
