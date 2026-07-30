@@ -49,6 +49,52 @@ async def test_v2_invalid_timespan_returns_400(client):
 
 
 @pytest.mark.anyio
+async def test_v2_stats_requires_timespan_or_span(client):
+    resp = await client.get("/v2/stats?region=americas")
+    assert resp.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_v2_stats_forwards_current_filters(client, monkeypatch):
+    captured = {}
+
+    async def fake_stats(region, timespan=None, **filters):
+        captured.update({"region": region, "timespan": timespan, **filters})
+        return {
+            "data": {
+                "status": 200,
+                "filters": {"region": region, "span": filters["span"]},
+                "segments": [],
+            }
+        }
+
+    monkeypatch.setattr("routers.v2_router.get_stats_data", fake_stats)
+    resp = await client.get(
+        "/v2/stats?region=emea&span=custom&from=2026-01-01&to=2026-06-30"
+        "&tier=vct&side=ct&role=sentinel&agent=killjoy&map_id=12"
+        "&min_rounds=100&min_rating=0&sort=kmax&dir=asc"
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "region": "emea",
+        "timespan": None,
+        "span": "custom",
+        "from_date": "2026-01-01",
+        "to_date": "2026-06-30",
+        "tier": "vct",
+        "side": "ct",
+        "role": "sentinel",
+        "agent": "killjoy",
+        "map_id": "12",
+        "min_rounds": 100,
+        "min_rating": 0,
+        "sort": "kmax",
+        "direction": "asc",
+    }
+
+
+@pytest.mark.anyio
 async def test_v2_invalid_event_query_returns_400(client):
     resp = await client.get("/v2/events?q=bad_query")
     assert resp.status_code == 400
