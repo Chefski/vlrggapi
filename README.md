@@ -167,6 +167,42 @@ GET /v2/match?q=upcoming
 ```
 </details>
 
+Every match-list segment also includes a shared `match` record, whether it came
+from the global schedule/results, an event, a team, or a player:
+
+```json
+{
+  "match": {
+    "source": "matches",
+    "match_id": "698903",
+    "stats_match_id": "",
+    "url": "https://www.vlr.gg/698903/...",
+    "status": "scheduled",
+    "status_text": "Upcoming",
+    "scheduled_at": "",
+    "display": { "date": "Thu, July 30, 2026", "time": "12:00 PM", "relative": "45m" },
+    "event": {
+      "id": "", "name": "VCT 2026: Pacific Stage 2", "stage": "Group Stage", "stage_slug": "",
+      "series": "Week 3", "url": "", "logo": "https://owcdn.net/img/..."
+    },
+    "teams": [
+      { "id": "", "name": "FULL SENSE", "tag": "", "country_code": "th", "logo": "", "score": "", "is_winner": false },
+      { "id": "", "name": "ZETA DIVISION", "tag": "", "country_code": "jp", "logo": "", "score": "", "is_winner": false }
+    ],
+    "note": "",
+    "page": 1
+  }
+}
+```
+
+`data.meta.record_schema` is `match-list` on all of these responses. Stable
+IDs are filled whenever VLR exposes them in that source; unavailable values are
+empty for V2 compatibility. `scheduled_at` is RFC3339 only when VLR supplies a
+trustworthy UTC value (currently live records, whose detail page is already
+fetched). Otherwise use the raw `match.display` values or request
+`/v2/match/details`. The legacy `unix_timestamp` alias is preserved but may be
+an estimated formatted date rather than a Unix timestamp.
+
 ### `GET /v2/rankings`
 **Params:** `region` (required — see [Region Codes](#region-codes)) | **Cache:** 1 hr
 
@@ -474,8 +510,12 @@ GET /v2/player?id=9&q=matches&page=1
 {
   "status": "success",
   "data": {
-    "matches": [{ "match_id": "595657", "event": "Champions Tour 2024: Americas Stage 1", "teams": { "team1": "Sentinels", "team2": "Cloud9" }, "score": "2-1", "date": "Apr 24, 2024" }],
-    "page": 1
+    "status": 200,
+    "segments": [{
+      "match_id": "698899", "event": "VCT 26: PAC Stage 2", "score": "0:2", "result": "loss",
+      "match": { "source": "player", "match_id": "698899", "status": "completed", "teams": [{ "name": "..." }, { "name": "..." }], "event": { "name": "VCT 26: PAC Stage 2", "stage": "Group Stage", "series": "W2" } }
+    }],
+    "meta": { "page": 1, "record_schema": "match-list", "player_id": "9" }
   }
 }
 ```
@@ -521,8 +561,12 @@ GET /v2/team?id=2&q=stats
 {
   "status": "success",
   "data": {
-    "matches": [{ "match_id": "595657", "event": "Champions Tour 2024: Americas Stage 1", "teams": { "team1": "Sentinels", "team2": "Cloud9" }, "score": "2-1", "date": "Apr 24, 2024" }],
-    "page": 1
+    "status": 200,
+    "segments": [{
+      "match_id": "701063", "event": "Seeding", "score": "2:0", "result": "win",
+      "match": { "source": "team", "match_id": "701063", "status": "completed", "teams": [{ "name": "..." }, { "name": "..." }], "event": { "name": "VCT 26: CN Stage 2", "stage": "Group Stage", "series": "Seeding" } }
+    }],
+    "meta": { "page": 1, "record_schema": "match-list", "team_id": "2" }
   }
 }
 ```
@@ -581,13 +625,14 @@ GET /v2/events/matches?event_id=2095
 {
   "status": "success",
   "data": {
-    "matches": [{
-      "match_id": "595657",
-      "teams": [{ "name": "Sentinels", "score": "2", "is_winner": true }, { "name": "Cloud9", "score": "1", "is_winner": false }],
-      "event_series": "Grand Final",
-      "vods": [{ "name": "VOD", "url": "https://youtube.com/..." }],
-      "date": "Apr 24, 2024"
-    }]
+    "status": 200,
+    "segments": [{
+      "match_id": "701025", "event_series": "Week 1", "date": "Thu, July 9, 2026",
+      "team1": { "name": "Wolves Esports", "score": "2", "is_winner": true },
+      "team2": { "name": "Titan Esports Club", "score": "0", "is_winner": false },
+      "match": { "source": "event", "match_id": "701025", "status": "completed", "teams": [{ "name": "Wolves Esports", "score": "2" }, { "name": "Titan Esports Club", "score": "0" }], "event": { "id": "2978", "name": "VCT 2026: China Stage 2", "stage": "Group Stage", "series": "Week 1" } }
+    }],
+    "meta": { "record_schema": "match-list", "event_id": "2978" }
   }
 }
 ```

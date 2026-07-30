@@ -175,7 +175,11 @@ async def vlr_team_matches(team_id: str, page: int = 1) -> dict:
 
         for item in items:
             try:
-                parsed = _parse_team_match_item(item)
+                parsed = _parse_team_match_item(
+                    item,
+                    team_id=team_id,
+                    page=page,
+                )
                 if parsed is not None:
                     matches.append(parsed)
             except Exception as exc:
@@ -185,7 +189,11 @@ async def vlr_team_matches(team_id: str, page: int = 1) -> dict:
             "data": {
                 "status": status,
                 "segments": matches,
-                "meta": {"page": page},
+                "meta": {
+                    "page": page,
+                    "record_schema": "match-list",
+                    "team_id": team_id,
+                },
             }
         }
 

@@ -14,6 +14,7 @@ from utils.html_parsers import (
     parse_html,
 )
 from utils.http_client import fetch_with_retries, get_http_client
+from utils.match_records import build_match_record, match_team, normalize_match_status
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,11 @@ async def vlr_event_matches(event_id: str):
             return upstream_error_payload(status, f"event matches {event_id}")
 
         html = parse_html(resp.text)
+        event_name = extract_text_content(html.css_first(".event-header-main-title"))
+        event_logo_elem = html.css_first(".event-header-thumb img")
+        event_logo = normalize_image_url(
+            event_logo_elem.attributes.get("src", "") if event_logo_elem else ""
+        )
 
         matches = []
         current_date = ""
@@ -190,7 +196,16 @@ async def vlr_event_matches(event_id: str):
                 name = name_el.text(strip=True) if name_el else "TBD"
                 score = score_el.text(strip=True) if score_el else ""
                 is_winner = "mod-winner" in te.attributes.get("class", "")
-                teams.append({"name": name, "score": score, "is_winner": is_winner})
+                teams.append(
+                    {
+                        "name": name,
+                        "score": score,
+                        "is_winner": is_winner,
+                        "country_code": extract_region_from_flag(
+                            te.css_first(".flag")
+                        ),
+                    }
+                )
 
             while len(teams) < 2:
                 teams.append({"name": "TBD", "score": "", "is_winner": False})
@@ -208,6 +223,35 @@ async def vlr_event_matches(event_id: str):
 
             note_el = elem.css_first(".match-item-note")
             note = note_el.text(strip=True) if note_el else ""
+            time = extract_text_content(elem.css_first(".match-item-time"))
+            relative_time = extract_text_content(elem.css_first(".ml-eta"))
+            event_stage = extract_text_content(elem.css_first(".match-item-event"))
+            canonical = build_match_record(
+                source="event",
+                match_id=match_id,
+                url=match_url,
+                status=normalize_match_status(match_status, relative_time),
+                status_text=match_status,
+                date=current_date,
+                time=time,
+                relative_time=relative_time,
+                event_id=event_id,
+                event_name=event_name,
+                event_stage=event_stage.removeprefix(event_series).strip(),
+                event_series=event_series,
+                event_url=f"{VLR_BASE_URL}/event/{event_id}",
+                event_logo=event_logo,
+                teams=[
+                    match_team(
+                        name=team["name"],
+                        country_code=team.get("country_code", ""),
+                        score=team["score"],
+                        is_winner=team["is_winner"],
+                    )
+                    for team in teams[:2]
+                ],
+                note=note,
+            )
 
             matches.append({
                 "match_id": match_id,
@@ -218,9 +262,20 @@ async def vlr_event_matches(event_id: str):
                 "event_series": event_series,
                 "team1": teams[0],
                 "team2": teams[1],
+                "time": time,
+                "match": canonical,
             })
 
-        return {"data": {"status": status, "segments": matches}}
+        return {
+            "data": {
+                "status": status,
+                "segments": matches,
+                "meta": {
+                    "record_schema": "match-list",
+                    "event_id": event_id,
+                },
+            }
+        }
 
     return await cache_manager.get_or_create_async(
         CACHE_TTL_EVENT_MATCHES, build, *cache_key

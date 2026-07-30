@@ -180,6 +180,7 @@ async def scrape_multiple_pages(
             "status": 200,
             "segments": result,
             "meta": {
+                "record_schema": "match-list",
                 "page_range": f"{start_page}-{end_page}",
                 "total_pages_requested": total_pages,
                 "successful_pages": successful_pages,

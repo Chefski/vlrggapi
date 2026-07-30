@@ -41,7 +41,17 @@ LIVE_HTML = """
 
 
 MATCH_DETAIL_HTML = """
-<html><div class="match-header-vs">
+<html>
+<a class="match-header-event" href="/event/77/example-event/group-stage">
+  <div><div>Example Event</div><div class="match-header-event-series">Group Stage: W1</div></div>
+</a>
+<div class="match-header-date">
+  <div class="moment-tz-convert" data-utc-ts="2026-07-30 04:00:00">Thursday, July 30</div>
+  <div class="moment-tz-convert" data-utc-ts="2026-07-30 04:00:00">9:30 AM IST</div>
+</div>
+<a class="match-header-link mod-1" href="/team/10/team-one"></a>
+<a class="match-header-link mod-2" href="/team/20/team-two"></a>
+<div class="match-header-vs">
   <img src="//owcdn.net/img/team-one-light.png">
   <img src="//owcdn.net/img/team-two-light.png">
 </div></html>
@@ -101,25 +111,20 @@ async def test_vlr_upcoming_matches_handles_missing_homepage_fields(monkeypatch)
     monkeypatch.setattr("api.scrapers.matches.get_http_client", lambda: client)
 
     data = await vlr_upcoming_matches()
+    segment = data["data"]["segments"][0]
 
-    assert data == {
-        "data": {
-            "status": 200,
-            "segments": [
-                {
-                    "team1": "Alpha",
-                    "team2": "Beta",
-                    "flag1": "",
-                    "flag2": "",
-                    "time_until_match": "51m from now",
-                    "match_series": "",
-                    "match_event": "",
-                    "unix_timestamp": "",
-                    "match_page": "",
-                }
-            ],
-        }
-    }
+    assert data["data"]["status"] == 200
+    assert data["data"]["meta"] == {"record_schema": "match-list"}
+    assert segment["team1"] == "Alpha"
+    assert segment["team2"] == "Beta"
+    assert segment["time_until_match"] == "51m from now"
+    assert segment["unix_timestamp"] == ""
+    assert segment["match_page"] == ""
+    assert segment["match"]["status"] == "scheduled"
+    assert [team["name"] for team in segment["match"]["teams"]] == [
+        "Alpha",
+        "Beta",
+    ]
     cache_manager.clear_all()
 
 
@@ -139,40 +144,31 @@ async def test_vlr_live_score_handles_missing_homepage_fields(monkeypatch):
     monkeypatch.setattr("api.scrapers.matches.get_http_client", lambda: client)
 
     data = await vlr_live_score()
+    segment = data["data"]["segments"][0]
 
-    assert data == {
-        "data": {
-            "status": 200,
-            "segments": [
-                {
-                    "team1": "Team One",
-                    "team2": "TBD",
-                    "flag1": "",
-                    "flag2": "",
-                    "team1_logo": "https://owcdn.net/img/team-one-light.png",
-                    "team1_logo_light": "https://owcdn.net/img/team-one-light.png",
-                    "team1_logo_dark": "https://owcdn.net/img/team-one-dark.png",
-                    "team2_logo": "https://owcdn.net/img/team-two-light.png",
-                    "team2_logo_light": "https://owcdn.net/img/team-two-light.png",
-                    "team2_logo_dark": "https://owcdn.net/img/team-two-dark.png",
-                    "score1": "12",
-                    "score2": "",
-                    "team1_round_ct": "6",
-                    "team1_round_t": "N/A",
-                    "team2_round_ct": "N/A",
-                    "team2_round_t": "N/A",
-                    "map_number": "Unknown",
-                    "current_map": "Unknown",
-                    "time_until_match": "LIVE",
-                    "match_event": "",
-                    "match_series": "",
-                    "unix_timestamp": "",
-                        "match_page": "https://www.vlr.gg/123",
-                        "match_id": "123",
-                    }
-                ],
-            }
-        }
+    assert data["data"]["status"] == 200
+    assert data["data"]["meta"] == {"record_schema": "match-list"}
+    assert segment["team1"] == "Team One"
+    assert segment["team2"] == "TBD"
+    assert segment["team1_logo"] == "https://owcdn.net/img/team-one-light.png"
+    assert segment["team1_logo_dark"] == "https://owcdn.net/img/team-one-dark.png"
+    assert segment["score1"] == "12"
+    assert segment["team1_round_ct"] == "6"
+    assert segment["current_map"] == "Unknown"
+    assert segment["time_until_match"] == "LIVE"
+    assert segment["match_page"] == "https://www.vlr.gg/123"
+    assert segment["match_id"] == "123"
+    assert segment["match"]["source"] == "live"
+    assert segment["match"]["status"] == "live"
+    assert segment["match"]["scheduled_at"] == "2026-07-30T04:00:00Z"
+    assert segment["match"]["event"]["id"] == "77"
+    assert segment["match"]["event"]["stage"] == "Group Stage"
+    assert segment["match"]["event"]["stage_slug"] == "group-stage"
+    assert segment["match"]["event"]["series"] == "W1"
+    assert [team["id"] for team in segment["match"]["teams"]] == ["10", "20"]
+    assert segment["match"]["teams"][0]["logo"] == (
+        "https://owcdn.net/img/team-one-light.png"
+    )
     cache_manager.clear_all()
 
 
