@@ -139,7 +139,7 @@ async def v2_events(
     return _wrap_v2(result)
 
 
-@router.get("/match/details", response_model=V2Response, summary="Match detail", description="Get full match detail including per-map stats, round data, head-to-head history, performance tab, and economy data.")
+@router.get("/match/details", response_model=V2Response, summary="Match detail", description="Get full match detail including exact UTC scheduling, stable event/game/player/team IDs, map picks, attack/defense splits, round endings, streams, head-to-head history, performance, and economy data.")
 async def v2_match_detail(
     match_id: str = Query(..., description="VLR.GG match ID"),
 ):

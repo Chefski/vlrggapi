@@ -287,30 +287,67 @@ GET /v2/match/details?match_id=595657
 {
   "status": "success",
   "data": {
-    "match_id": "595657",
-    "event": { "name": "Champions Tour 2024: Americas Stage 1", "series": "Regular Season: Week 3" },
-    "map_vetos": "SEN ban Breeze; C9 ban Lotus; SEN pick Ascent; C9 pick Bind; Haven remains",
-    "date": "April 23, 2024", "status": "completed",
-    "teams": [
-      { "id": "2", "name": "Sentinels", "score": 2, "logo": "//owcdn.net/img/light-logo-id.png", "logo_light": "//owcdn.net/img/light-logo-id.png", "logo_dark": "//owcdn.net/img/dark-logo-id.png" },
-      { "id": "188", "name": "Cloud9", "score": 1, "logo": "//owcdn.net/img/logo-id.png", "logo_light": "//owcdn.net/img/logo-id.png", "logo_dark": "//owcdn.net/img/logo-id.png" }
-    ],
-    "maps": [{
-      "map_name": "Ascent", "picked_by": "Sentinels", "duration": "28:41",
-      "score": { "team1": { "total": 13, "ct": 8, "t": 5 }, "team2": { "total": 9, "ct": 4, "t": 5 } },
-      "players": { "team1": [{ "name": "TenZ", "agent": "Jett", "rating": "1.32", "acs": "267", "kills": "24", "deaths": "15", "assists": "3", "kd_diff": "+9", "kast": "77%", "adr": "172.3", "hs_pct": "32%", "fk": "4", "fd": "2", "fk_diff": "+2" }], "team2": [] },
-      "rounds": [{ "round_num": 1, "winner": "team1", "side": "t" }]
-    }],
-    "head_to_head": [{ "event": "VCT Americas", "date": "2024/03/15", "score": "2-1", "url": "https://www.vlr.gg/..." }],
-    "performance": {
-      "kill_matrix": [{ "player": "TenZ", "kills_vs": { "opponent1": "5" } }],
-      "advanced_stats": [{ "player": "TenZ", "2K": "3", "3K": "1" }]
-    },
-    "economy": [{ "Team": "Sentinels", "Pistol": "50%", "Eco": "33%", "Full": "72%" }]
+    "status": 200,
+    "segments": [{
+      "match_id": "595657",
+      "url": "https://www.vlr.gg/595657",
+      "stats_match_id": "102630",
+      "event": {
+        "id": "2683", "name": "VCT 2026: Pacific Kickoff",
+        "series": "Main Event: Lower Round 4", "stage": "main-event",
+        "url": "https://www.vlr.gg/event/2683/vct-2026-pacific-kickoff/main-event"
+      },
+      "date": "Thursday, February 12 8:00 AM GMT",
+      "utc_timestamp": "2026-02-12 03:00:00",
+      "scheduled_at": "2026-02-12T03:00:00Z",
+      "patch": "12.0", "status": "completed", "format": "Bo3",
+      "map_vetos": "PRX ban Abyss; KRX ban Pearl; PRX pick Haven; KRX pick Corrode; PRX ban Bind; KRX ban Split; Breeze remains",
+      "notes": [],
+      "teams": [
+        { "id": "8185", "name": "KIWOOM DRX", "score": "1", "is_winner": false, "url": "https://www.vlr.gg/team/8185/kiwoom-drx" },
+        { "id": "624", "name": "Paper Rex", "score": "2", "is_winner": true, "url": "https://www.vlr.gg/team/624/paper-rex" }
+      ],
+      "streams": [{ "name": "English", "url": "https://www.twitch.tv/valorant_pacific", "platform": "twitch", "country_code": "us", "is_embedded": true, "site_id": "..." }],
+      "vods": [{ "name": "Map 1", "url": "https://www.youtube.com/watch?v=...", "platform": "youtube", "map_number": 1 }],
+      "maps": [{
+        "game_id": "244645", "map_number": 1, "map_name": "Haven",
+        "picked_by": "Paper Rex", "picked_by_team_id": "624", "status": "completed",
+        "side_scores": {
+          "team1": { "total": 11, "attack": "4", "defense": "7", "overtime": "" },
+          "team2": { "total": 13, "attack": "5", "defense": "8", "overtime": "" }
+        },
+        "players": { "team1": [{
+          "player_id": "28400", "name": "HYUNMIN", "country": "kr", "team_tag": "KRX",
+          "agent": "Waylay", "agent_slug": "waylay", "rating": "1.05",
+          "attack": { "rating": "0.86", "kills": "7" },
+          "defense": { "rating": "1.24", "kills": "13" }
+        }], "team2": [] },
+        "rounds": [{
+          "round_num": 1, "winner": "team2", "side": "ct", "side_name": "defense",
+          "method": "elimination", "method_code": "elim",
+          "score_after": { "team1": 0, "team2": 1 }
+        }],
+        "performance": {
+          "kill_matrix": [{
+            "player": "free1ng", "player_id": "1916", "kills_vs": { "Jinggg": "3" },
+            "matchups": [{ "opponent": "Jinggg", "opponent_id": "7378", "kills": "3", "deaths": "3", "differential": "+0" }]
+          }],
+          "advanced_stats": [{ "player": "free1ng", "player_id": "1916", "agent": "Tejo", "2K": "3", "1v2": "1" }]
+        },
+        "economy": [{ "team_id": "8185", "Team": "KRX", "Pistol Won": "0", "Eco (won)": "4 (0)" }]
+      }],
+      "head_to_head": [{
+        "match_id": "542278", "event": "Champions 2025", "event_series": "LR3",
+        "date": "2025/10/03", "score": "2 0", "url": "https://www.vlr.gg/542278/..."
+      }]
+    }]
   }
 }
 ```
 </details>
+
+`performance.by_map` and `economy_by_map` remain available for compatibility.
+Scheduled maps are returned with empty rounds, performance, and economy data.
 
 ### `GET /v2/event/{event_id}`
 Event detail: metadata and calendar links, resource navigation, stage tabs, current `event-group` standings/schedules, brackets, prizes, and teams. Use a stage slug returned in `stages` to select a different stage.

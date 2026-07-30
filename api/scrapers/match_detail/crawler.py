@@ -36,13 +36,69 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_game_ids(html: HTMLParser) -> list[str]:
-    """Return all data-game-id values from the stats nav, excluding 'all'."""
+    """Return playable data-game-id values from the stats nav."""
     game_ids: list[str] = []
     for item in html.css(".vm-stats-gamesnav-item"):
         gid = item.attributes.get("data-game-id", "")
-        if gid and gid != "all":
+        if (
+            gid
+            and gid != "all"
+            and item.attributes.get("data-disabled", "0") != "1"
+        ):
             game_ids.append(gid)
     return game_ids
+
+
+def _player_lookup(map_data: dict) -> dict[str, dict]:
+    players = [
+        player
+        for side in ("team1", "team2")
+        for player in map_data.get("players", {}).get(side, [])
+    ]
+    return {
+        player.get("name", "").casefold(): player
+        for player in players
+        if player.get("name")
+    }
+
+
+def _enrich_performance_identities(performance: dict, map_data: dict) -> None:
+    lookup = _player_lookup(map_data)
+    for row in performance.get("kill_matrix", []):
+        player = lookup.get(row.get("player", "").casefold(), {})
+        row["player_id"] = player.get("player_id", "")
+        row["player_url"] = player.get("player_url", "")
+        for matchup in row.get("matchups", []):
+            opponent = lookup.get(matchup.get("opponent", "").casefold(), {})
+            matchup["opponent_id"] = opponent.get("player_id", "")
+            matchup["opponent_url"] = opponent.get("player_url", "")
+
+    for row in performance.get("advanced_stats", []):
+        player = lookup.get(row.get("player", "").casefold(), {})
+        row["player_id"] = player.get("player_id", "")
+        row["player_url"] = player.get("player_url", "")
+
+
+def _enrich_economy_identities(
+    rows: list[dict],
+    teams: list[dict],
+    map_data: dict,
+) -> None:
+    lookup = {
+        value.casefold(): team
+        for team in teams
+        for value in (team.get("name", ""), team.get("tag", ""))
+        if value
+    }
+    for index, side in enumerate(("team1", "team2")):
+        players = map_data.get("players", {}).get(side, [])
+        if index < len(teams) and players:
+            team_tag = players[0].get("team_tag", "")
+            if team_tag:
+                lookup[team_tag.casefold()] = teams[index]
+    for row in rows:
+        team = lookup.get(row.get("Team", "").casefold(), {})
+        row["team_id"] = team.get("id", "")
 
 
 async def _fetch_game_tab_html(
@@ -74,7 +130,7 @@ async def vlr_match_detail(match_id: str) -> dict:
     Scrape a single VLR.GG match page and return structured match data.
 
     Fetches the base page, then concurrently fetches the performance and
-    economy tabs for the first game. Cache TTL is 30 s for live matches
+    economy tabs for every started game. Cache TTL is 30 s for live matches
     and 300 s for completed matches.
     """
     base_url = f"{VLR_BASE_URL}/{match_id}"
@@ -109,7 +165,28 @@ async def vlr_match_detail(match_id: str) -> dict:
         base_html = parse_html(light_resp.text)
         dark_html = parse_html(dark_resp.text)
 
-        game_ids = _extract_game_ids(base_html)
+        event_info = _parse_event_info(base_html)
+        add_image_variants(event_info, _parse_event_info(dark_html))
+        header_info = _parse_match_header(base_html)
+        teams = _parse_teams(base_html)
+        dark_teams = _parse_teams(dark_html)
+        dark_teams_by_id = {team["id"]: team for team in dark_teams if team["id"]}
+        for index, team in enumerate(teams):
+            dark_team = dark_teams_by_id.get(team["id"])
+            if dark_team is None and index < len(dark_teams):
+                dark_team = dark_teams[index]
+            add_image_variants(team, dark_team)
+        streams, vods = _parse_streams_vods(base_html)
+        maps = _parse_maps(base_html, teams)
+        h2h = _parse_head_to_head(base_html, teams)
+
+        all_game_ids = _extract_game_ids(base_html)
+        map_statuses = {game["game_id"]: game["status"] for game in maps}
+        game_ids = [
+            game_id
+            for game_id in all_game_ids
+            if map_statuses.get(game_id, "in_progress") != "scheduled"
+        ]
         first_game_id = game_ids[0] if game_ids else None
 
         performance_by_game: dict[str, dict] = {}
@@ -147,39 +224,39 @@ async def vlr_match_detail(match_id: str) -> dict:
                 elif tab == "economy":
                     economy_by_game[game_id] = _parse_economy(tab_html)
 
-        event_info = _parse_event_info(base_html)
-        add_image_variants(event_info, _parse_event_info(dark_html))
-        header_info = _parse_match_header(base_html)
-        teams = _parse_teams(base_html)
-        dark_teams = _parse_teams(dark_html)
-        dark_teams_by_id = {team["id"]: team for team in dark_teams if team["id"]}
-        for index, team in enumerate(teams):
-            dark_team = dark_teams_by_id.get(team["id"])
-            if dark_team is None and index < len(dark_teams):
-                dark_team = dark_teams[index]
-            add_image_variants(team, dark_team)
-        streams, vods = _parse_streams_vods(base_html)
-        maps = _parse_maps(base_html)
-        h2h = _parse_head_to_head(base_html)
-
-        for index, map_data in enumerate(maps):
-            game_id = game_ids[index] if index < len(game_ids) else ""
-            map_data["performance"] = performance_by_game.get(
+        for map_data in maps:
+            game_id = map_data["game_id"]
+            map_data["game_url"] = (
+                f"{base_url}/?game={game_id}&tab=overview" if game_id else ""
+            )
+            performance = performance_by_game.get(
                 game_id, {"kill_matrix": [], "advanced_stats": []}
             )
-            map_data["economy"] = economy_by_game.get(game_id, [])
+            economy = economy_by_game.get(game_id, [])
+            _enrich_performance_identities(performance, map_data)
+            _enrich_economy_identities(economy, teams, map_data)
+            map_data["performance"] = performance
+            map_data["economy"] = economy
 
         first_game_performance = performance_by_game.get(
             first_game_id or "", {"kill_matrix": [], "advanced_stats": []}
         )
         first_game_economy = economy_by_game.get(first_game_id or "", [])
 
+        stats = base_html.css_first(".vm-stats")
         segment = {
             "match_id": match_id,
+            "url": base_url,
+            "stats_match_id": stats.attributes.get("data-match-id", "") if stats else "",
             "event": event_info,
             "date": header_info["date"],
+            "utc_timestamp": header_info["utc_timestamp"],
+            "scheduled_at": header_info["scheduled_at"],
+            "patch": header_info["patch"],
             "map_vetos": header_info["map_vetos"],
+            "notes": header_info["notes"],
             "status": header_info["status"],
+            "format": header_info["format"],
             "teams": teams,
             "streams": streams,
             "vods": vods,
@@ -189,14 +266,20 @@ async def vlr_match_detail(match_id: str) -> dict:
                 "kill_matrix": first_game_performance["kill_matrix"],
                 "advanced_stats": first_game_performance["advanced_stats"],
                 "by_map": [
-                    {"game_id": game_id, **performance_by_game.get(game_id, {"kill_matrix": [], "advanced_stats": []})}
-                    for game_id in game_ids
+                    {
+                        "game_id": game_id,
+                        **performance_by_game.get(
+                            game_id,
+                            {"kill_matrix": [], "advanced_stats": []},
+                        ),
+                    }
+                    for game_id in all_game_ids
                 ],
             },
             "economy": first_game_economy,
             "economy_by_map": [
                 {"game_id": game_id, "rows": economy_by_game.get(game_id, [])}
-                for game_id in game_ids
+                for game_id in all_game_ids
             ],
         }
 
