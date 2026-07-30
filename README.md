@@ -33,6 +33,7 @@ curl "http://127.0.0.1:3001/v2/player?id=9&timespan=all"
 - **V2-first API** - consistent response envelopes, validation, and per-endpoint caching
 - **Backwards compatibility** - original unversioned endpoints are still available
 - **Deep match coverage** - detailed match, player, team, and event match endpoints
+- **Appearance-aware logos** - light and dark VLR.GG assets with backwards-compatible defaults
 - **Operational guardrails** - async HTTP, rate limiting, and bounded expensive scrapes
 
 ## What's New
@@ -97,6 +98,11 @@ See section below for full descriptions and response examples.
 ## V2 Endpoints
 
 All examples are collapsed — click to expand.
+
+Team and event identities returned by live scores, rankings, match details, and
+team profiles include light and dark fields. The existing `logo` fields remain
+aliases for their light variants. When VLR.GG does not provide a distinct dark
+asset, the dark field falls back to the light URL.
 
 ### `GET /v2/news`
 **Params:** none | **Cache:** 10 min
@@ -175,7 +181,9 @@ GET /v2/rankings?region=na
       {
         "rank": "1", "team": "Sentinels", "country": "United States",
         "last_played": "22h ago", "record": "7-3", "earnings": "$295,500",
-        "logo": "//owcdn.net/img/..."
+        "logo": "//owcdn.net/img/light-logo-id.png",
+        "logo_light": "//owcdn.net/img/light-logo-id.png",
+        "logo_dark": "//owcdn.net/img/dark-logo-id.png"
       }
     ]
   }
@@ -261,8 +269,8 @@ GET /v2/match/details?match_id=595657
     "map_vetos": "SEN ban Breeze; C9 ban Lotus; SEN pick Ascent; C9 pick Bind; Haven remains",
     "date": "April 23, 2024", "status": "completed",
     "teams": [
-      { "id": "2", "name": "Sentinels", "score": 2, "logo": "//owcdn.net/img/..." },
-      { "id": "188", "name": "Cloud9", "score": 1, "logo": "//owcdn.net/img/..." }
+      { "id": "2", "name": "Sentinels", "score": 2, "logo": "//owcdn.net/img/light-logo-id.png", "logo_light": "//owcdn.net/img/light-logo-id.png", "logo_dark": "//owcdn.net/img/dark-logo-id.png" },
+      { "id": "188", "name": "Cloud9", "score": 1, "logo": "//owcdn.net/img/logo-id.png", "logo_light": "//owcdn.net/img/logo-id.png", "logo_dark": "//owcdn.net/img/logo-id.png" }
     ],
     "maps": [{
       "map_name": "Ascent", "picked_by": "Sentinels", "duration": "28:41",
@@ -401,11 +409,19 @@ GET /v2/team?id=2&q=stats
 {
   "status": "success",
   "data": {
-    "info": { "name": "Sentinels", "tag": "SEN", "logo": "https://owcdn.net/img/...", "country": "United States", "socials": [{ "platform": "twitter", "url": "..." }] },
-    "rating": { "vlr_rating": "1850", "rank": "1", "region": "na" },
-    "roster": [{ "alias": "TenZ", "real_name": "Tyson Ngo", "role": "Duelist", "is_captain": false, "avatar": "..." }],
-    "event_placements": [{ "event": "Champions 2024", "placement": "1st", "prize": "$100,000" }],
-    "total_winnings": "$1,194,000"
+    "status": 200,
+    "segments": [{
+      "id": "2", "name": "Sentinels", "tag": "SEN",
+      "logo": "https://owcdn.net/img/light-logo-id.png",
+      "logo_light": "https://owcdn.net/img/light-logo-id.png",
+      "logo_dark": "https://owcdn.net/img/dark-logo-id.png",
+      "country_name": "United States",
+      "social_links": [{ "platform": "twitter", "url": "..." }],
+      "rating": { "rank": "1", "rating": "1850" },
+      "roster": [{ "alias": "TenZ", "real_name": "Tyson Ngo", "role": "Duelist", "is_captain": false, "avatar": "..." }],
+      "event_placements": [{ "event": "Champions 2024", "placement": "1st", "prize": "$100,000" }],
+      "total_winnings": "$1,194,000"
+    }]
   }
 }
 ```
@@ -570,8 +586,12 @@ Preserved for backwards compatibility. Most return `{"data": {"status": int, "se
         "team2": "Team 2",
         "flag1": "flag_xx",
         "flag2": "flag_xx",
-        "team1_logo": "https://...",
-        "team2_logo": "https://...",
+        "team1_logo": "https://.../team-1-light.png",
+        "team1_logo_light": "https://.../team-1-light.png",
+        "team1_logo_dark": "https://.../team-1-dark.png",
+        "team2_logo": "https://.../team-2-light.png",
+        "team2_logo_light": "https://.../team-2-light.png",
+        "team2_logo_dark": "https://.../team-2-dark.png",
         "score1": "1",
         "score2": "0",
         "team1_round_ct": "7",

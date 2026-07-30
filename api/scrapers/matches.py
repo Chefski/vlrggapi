@@ -23,7 +23,7 @@ from utils.html_parsers import (
     parse_html,
     parse_match_timestamp,
 )
-from utils.http_client import fetch_with_retries, get_http_client
+from utils.http_client import fetch_theme_variants, fetch_with_retries, get_http_client
 from utils.pagination import PaginationConfig, scrape_multiple_pages
 
 logger = logging.getLogger(__name__)
@@ -154,12 +154,20 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
         async def fetch_match_detail(url):
             try:
                 async with detail_fetch_semaphore:
-                    return await fetch_with_retries(
+                    light_resp, dark_resp = await fetch_theme_variants(
                         url,
                         client=client,
                         timeout=LIVE_DETAIL_FETCH_TIMEOUT,
                         max_retries=1,
                     )
+                    if light_resp.status_code >= 400:
+                        logger.warning(
+                            "Failed to fetch live match detail %s: upstream status %d",
+                            url,
+                            light_resp.status_code,
+                        )
+                        return None
+                    return light_resp, dark_resp
             except Exception as e:
                 logger.warning("Failed to fetch match detail %s: %s", url, e)
                 return None
@@ -169,20 +177,31 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
         )
 
         result = []
-        for match_data, detail_resp in zip(live_matches, detail_responses):
-            team_logos = ["", ""]
+        for match_data, detail_response_pair in zip(live_matches, detail_responses):
+            team_logos_light = ["", ""]
+            team_logos_dark = ["", ""]
             current_map = "Unknown"
             map_number = "Unknown"
 
-            if detail_resp is not None:
-                match_html = parse_html(detail_resp.text)
+            if detail_response_pair is not None:
+                light_detail_resp, dark_detail_resp = detail_response_pair
+                match_html = parse_html(light_detail_resp.text)
+                dark_match_html = parse_html(dark_detail_resp.text)
 
-                logos = []
-                for img in match_html.css(".match-header-vs img"):
-                    logo_url = "https:" + img.attributes.get("src", "")
-                    logos.append(logo_url)
-                if len(logos) >= 2:
-                    team_logos = logos[:2]
+                light_logos = [
+                    normalize_image_url(img.attributes.get("src", ""))
+                    for img in match_html.css(".match-header-vs img")
+                ]
+                dark_logos = [
+                    normalize_image_url(img.attributes.get("src", ""))
+                    for img in dark_match_html.css(".match-header-vs img")
+                ]
+                if len(light_logos) >= 2:
+                    team_logos_light = light_logos[:2]
+                if len(dark_logos) >= 2:
+                    team_logos_dark = dark_logos[:2]
+                else:
+                    team_logos_dark = team_logos_light.copy()
 
                 current_map_element = match_html.css_first(
                     ".vm-stats-gamesnav-item.js-map-switch.mod-active.mod-live"
@@ -203,8 +222,12 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
                     "team2": match_data["teams"][1],
                     "flag1": match_data["flags"][0],
                     "flag2": match_data["flags"][1],
-                    "team1_logo": team_logos[0],
-                    "team2_logo": team_logos[1],
+                    "team1_logo": team_logos_light[0],
+                    "team1_logo_light": team_logos_light[0],
+                    "team1_logo_dark": team_logos_dark[0] or team_logos_light[0],
+                    "team2_logo": team_logos_light[1],
+                    "team2_logo_light": team_logos_light[1],
+                    "team2_logo_dark": team_logos_dark[1] or team_logos_light[1],
                     "score1": match_data["scores"][0],
                     "score2": match_data["scores"][1],
                     "team1_round_ct": rt[0]["ct"] if len(rt) > 0 else "N/A",

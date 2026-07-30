@@ -64,6 +64,19 @@ BASE_MATCH_HTML = f"""
 </html>
 """
 
+LIGHT_MATCH_HTML = BASE_MATCH_HTML.replace(
+    "</html>",
+    """
+    <div class="match-header-event"><img src="//owcdn.net/img/event-light.png"></div>
+    <div class="match-header-vs">
+      <img src="//owcdn.net/img/team-one-light.png">
+      <img src="//owcdn.net/img/team-two-light.png">
+    </div>
+    </html>
+    """,
+)
+DARK_MATCH_HTML = LIGHT_MATCH_HTML.replace("-light.png", "-dark.png")
+
 
 def performance_html(opponent_name: str) -> str:
     return f"""
@@ -114,7 +127,10 @@ async def test_vlr_match_detail_fetches_performance_and_economy_for_all_games(mo
     cache_manager.clear_all()
     client = FakeAsyncClient(
         {
-            "https://www.vlr.gg/555": [FakeResponse(200, BASE_MATCH_HTML)],
+            "https://www.vlr.gg/555": [
+                FakeResponse(200, LIGHT_MATCH_HTML),
+                FakeResponse(200, DARK_MATCH_HTML),
+            ],
             "https://www.vlr.gg/555/?game=game-1&tab=performance": [FakeResponse(200, performance_html("Opponent A"))],
             "https://www.vlr.gg/555/?game=game-1&tab=economy": [FakeResponse(200, economy_html("Team One"))],
             "https://www.vlr.gg/555/?game=game-2&tab=performance": [FakeResponse(200, performance_html("Opponent B"))],
@@ -133,7 +149,9 @@ async def test_vlr_match_detail_fetches_performance_and_economy_for_all_games(mo
             "id": "100",
             "name": "Team One",
             "tag": "ONE",
-            "logo": "",
+            "logo": "https://owcdn.net/img/team-one-light.png",
+            "logo_light": "https://owcdn.net/img/team-one-light.png",
+            "logo_dark": "https://owcdn.net/img/team-one-dark.png",
             "score": "",
             "is_winner": False,
         },
@@ -141,11 +159,16 @@ async def test_vlr_match_detail_fetches_performance_and_economy_for_all_games(mo
             "id": "200",
             "name": "Team Two",
             "tag": "TWO",
-            "logo": "",
+            "logo": "https://owcdn.net/img/team-two-light.png",
+            "logo_light": "https://owcdn.net/img/team-two-light.png",
+            "logo_dark": "https://owcdn.net/img/team-two-dark.png",
             "score": "",
             "is_winner": False,
         },
     ]
+    assert segment["event"]["logo"] == "https://owcdn.net/img/event-light.png"
+    assert segment["event"]["logo_light"] == "https://owcdn.net/img/event-light.png"
+    assert segment["event"]["logo_dark"] == "https://owcdn.net/img/event-dark.png"
     assert segment["performance"]["kill_matrix"] == [{"player": "TenZ", "kills_vs": {"Opponent A": "5"}}]
     assert segment["performance"]["advanced_stats"] == [{"player": "TenZ", "2K": "3"}]
     assert segment["economy"] == [{"Team": "Team One", "Pistol": "50%"}]
@@ -175,7 +198,7 @@ async def test_vlr_match_detail_fetches_performance_and_economy_for_all_games(mo
         "advanced_stats": [{"player": "TenZ", "2K": "3"}],
     }
     assert segment["maps"][1]["economy"] == [{"Team": "Team Two", "Pistol": "50%"}]
-    assert len(client.calls) == 5
+    assert len(client.calls) == 6
     cache_manager.clear_all()
 
 
@@ -212,9 +235,15 @@ async def test_vlr_match_detail_limits_tab_fetches_and_falls_back_on_tab_error(m
             active_fetches -= 1
 
     monkeypatch.setattr("api.scrapers.match_detail.crawler.get_http_client", lambda: object())
+
+    async def fake_fetch_theme_variants(url, *, client=None):
+        return FakeResponse(200, BASE_MATCH_HTML), FakeResponse(200, BASE_MATCH_HTML)
+
     monkeypatch.setattr(
-        "api.scrapers.match_detail.crawler.fetch_with_retries", fake_fetch_with_retries
+        "api.scrapers.match_detail.crawler.fetch_theme_variants",
+        fake_fetch_theme_variants,
     )
+    monkeypatch.setattr("api.scrapers.match_detail.crawler.fetch_with_retries", fake_fetch_with_retries)
     monkeypatch.setattr("api.scrapers.match_detail.crawler.MATCH_DETAIL_TAB_FETCH_CONCURRENCY", 2)
     monkeypatch.setattr("api.scrapers.match_detail.crawler.MATCH_DETAIL_TAB_FETCH_TIMEOUT", 11)
 
@@ -240,13 +269,13 @@ async def test_vlr_match_detail_uses_empty_team_id_when_header_link_is_missing(m
                         '<a class="match-header-link wf-link-hover mod-2" href="/team/200/team-two">\n'
                         '    <div class="match-header-link-name mod-2">\n'
                         '      <div class="wf-title-med">Team Two</div>\n'
-                        '      <div>TWO</div>\n'
-                        '    </div>\n'
-                        '  </a>\n',
+                        "      <div>TWO</div>\n"
+                        "    </div>\n"
+                        "  </a>\n",
                         '<div class="match-header-link-name mod-2">\n'
                         '  <div class="wf-title-med">Team Two</div>\n'
-                        '  <div>TWO</div>\n'
-                        '</div>\n',
+                        "  <div>TWO</div>\n"
+                        "</div>\n",
                     ),
                 )
             ],

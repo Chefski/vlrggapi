@@ -40,7 +40,13 @@ LIVE_HTML = """
 """
 
 
-MATCH_DETAIL_HTML = "<html></html>"
+MATCH_DETAIL_HTML = """
+<html><div class="match-header-vs">
+  <img src="//owcdn.net/img/team-one-light.png">
+  <img src="//owcdn.net/img/team-two-light.png">
+</div></html>
+"""
+DARK_MATCH_DETAIL_HTML = MATCH_DETAIL_HTML.replace("-light.png", "-dark.png")
 
 MULTI_LIVE_HTML = """
 <html>
@@ -123,7 +129,10 @@ async def test_vlr_live_score_handles_missing_homepage_fields(monkeypatch):
     client = FakeAsyncClient(
         {
             "https://www.vlr.gg": [FakeResponse(200, LIVE_HTML)],
-            "https://www.vlr.gg/123": [FakeResponse(200, MATCH_DETAIL_HTML)],
+            "https://www.vlr.gg/123": [
+                FakeResponse(200, MATCH_DETAIL_HTML),
+                FakeResponse(200, DARK_MATCH_DETAIL_HTML),
+            ],
         }
     )
 
@@ -140,8 +149,12 @@ async def test_vlr_live_score_handles_missing_homepage_fields(monkeypatch):
                     "team2": "TBD",
                     "flag1": "",
                     "flag2": "",
-                    "team1_logo": "",
-                    "team2_logo": "",
+                    "team1_logo": "https://owcdn.net/img/team-one-light.png",
+                    "team1_logo_light": "https://owcdn.net/img/team-one-light.png",
+                    "team1_logo_dark": "https://owcdn.net/img/team-one-dark.png",
+                    "team2_logo": "https://owcdn.net/img/team-two-light.png",
+                    "team2_logo_light": "https://owcdn.net/img/team-two-light.png",
+                    "team2_logo_dark": "https://owcdn.net/img/team-two-dark.png",
                     "score1": "12",
                     "score2": "",
                     "team1_round_ct": "6",
@@ -176,21 +189,27 @@ async def test_vlr_live_score_limits_concurrent_detail_fetches_and_falls_back_on
     max_active_fetches = 0
 
     async def fake_fetch_with_retries(url, *, client=None, timeout=None, max_retries=3, request_delay=1.0):
-        nonlocal active_fetches, max_active_fetches
-        if url == "https://www.vlr.gg":
-            return await client.get(url, timeout=timeout)
+        return await client.get(url, timeout=timeout)
 
+    async def fake_fetch_theme_variants(
+        url, *, client=None, timeout=None, max_retries=3, request_delay=1.0
+    ):
+        nonlocal active_fetches, max_active_fetches
         active_fetches += 1
         max_active_fetches = max(max_active_fetches, active_fetches)
         try:
+            assert timeout == 7
+            assert max_retries == 1
             if url.endswith("/102"):
                 raise httpx.ReadTimeout("timed out")
-            return FakeResponse(200, MATCH_DETAIL_HTML)
+            response = FakeResponse(200, MATCH_DETAIL_HTML)
+            return response, response
         finally:
             active_fetches -= 1
 
     monkeypatch.setattr("api.scrapers.matches.get_http_client", lambda: client)
     monkeypatch.setattr("api.scrapers.matches.fetch_with_retries", fake_fetch_with_retries)
+    monkeypatch.setattr("api.scrapers.matches.fetch_theme_variants", fake_fetch_theme_variants)
     monkeypatch.setattr("api.scrapers.matches.LIVE_DETAIL_FETCH_CONCURRENCY", 2)
     monkeypatch.setattr("api.scrapers.matches.LIVE_DETAIL_FETCH_TIMEOUT", 7)
 

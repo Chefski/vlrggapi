@@ -105,6 +105,24 @@ def normalize_image_url(src: str, base_url: str = "https://www.vlr.gg") -> str:
         return src
 
 
+def add_image_variants(
+    item: dict,
+    dark_item: dict | None = None,
+    field: str = "logo",
+) -> dict:
+    """Add light/dark image fields while preserving the legacy field.
+
+    The original field remains the light/default asset. Missing dark assets
+    fall back to the light URL so clients can select by appearance without
+    adding their own fallback logic.
+    """
+    light_value = item.get(field, "")
+    dark_value = dark_item.get(field, "") if dark_item else ""
+    item[f"{field}_light"] = light_value
+    item[f"{field}_dark"] = dark_value or light_value
+    return item
+
+
 def build_full_url(href: str, base_url: str = "https://www.vlr.gg") -> str:
     """Build full URL from relative href"""
     if not href:

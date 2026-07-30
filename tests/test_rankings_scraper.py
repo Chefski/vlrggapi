@@ -39,6 +39,14 @@ RANKINGS_HTML = """
 </html>
 """
 
+DARK_RANKINGS_HTML = RANKINGS_HTML.replace(
+    "//owcdn.net/img/team.png",
+    "//owcdn.net/img/team-dark.png",
+).replace(
+    "//owcdn.net/img/opponent.png",
+    "//owcdn.net/img/opponent-dark.png",
+)
+
 
 FALLBACK_ROW_HTML = """
 <div class="rank-item wf-card fc-flex">
@@ -69,19 +77,27 @@ class FakeResponse:
 
 
 class FakeAsyncClient:
-    def __init__(self, response: FakeResponse):
-        self.response = response
+    def __init__(self, light_response: FakeResponse, dark_response: FakeResponse | None = None):
+        self.light_response = light_response
+        self.dark_response = dark_response or light_response
         self.calls = []
+        self.request_headers = []
 
     async def get(self, url: str, timeout=None, headers=None):
         self.calls.append((url, timeout))
-        return self.response
+        self.request_headers.append(headers)
+        if headers and "%3A1%7D" in headers.get("Cookie", ""):
+            return self.dark_response
+        return self.light_response
 
 
 @pytest.mark.anyio
 async def test_vlr_rankings_preserves_current_output_shape(monkeypatch):
     cache_manager.clear_all()
-    client = FakeAsyncClient(FakeResponse(200, RANKINGS_HTML))
+    client = FakeAsyncClient(
+        FakeResponse(200, RANKINGS_HTML),
+        FakeResponse(200, DARK_RANKINGS_HTML),
+    )
 
     monkeypatch.setattr("api.scrapers.rankings.get_http_client", lambda: client)
 
@@ -100,15 +116,26 @@ async def test_vlr_rankings_preserves_current_output_shape(monkeypatch):
                     "last_played": "6d ago",
                     "last_played_team": "vs. Paper Rex",
                     "last_played_team_logo": "//owcdn.net/img/opponent.png",
+                    "last_played_team_logo_light": "//owcdn.net/img/opponent.png",
+                    "last_played_team_logo_dark": "//owcdn.net/img/opponent-dark.png",
                     "record": "47-24",
                     "recent_record": "166-85",
                     "earnings": "$2,125,500",
                     "logo": "//owcdn.net/img/team.png",
+                    "logo_light": "//owcdn.net/img/team.png",
+                    "logo_dark": "//owcdn.net/img/team-dark.png",
                 }
             ],
         }
     }
-    assert client.calls == [("https://www.vlr.gg/rankings/north-america", None)]
+    assert client.calls == [
+        ("https://www.vlr.gg/rankings/north-america", None),
+        ("https://www.vlr.gg/rankings/north-america", None),
+    ]
+    assert {headers["Cookie"] for headers in client.request_headers} == {
+        "settings=%7B%22dark_mode%22%3A0%7D",
+        "settings=%7B%22dark_mode%22%3A1%7D",
+    }
     cache_manager.clear_all()
 
 

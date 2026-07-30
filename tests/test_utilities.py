@@ -393,6 +393,10 @@ async def test_vlr_match_detail_does_not_cache_non_200_responses(monkeypatch):
                 FakeResponse(503),
                 FakeResponse(503),
                 FakeResponse(503),
+                FakeResponse(503),
+                FakeResponse(503),
+                FakeResponse(503),
+                FakeResponse(200),
                 FakeResponse(200),
             ],
         }
@@ -408,6 +412,10 @@ async def test_vlr_match_detail_does_not_cache_non_200_responses(monkeypatch):
     assert first["data"]["segments"] == []
     assert second["data"]["status"] == 200
     assert client.calls == [
+        ("https://www.vlr.gg/123", None),
+        ("https://www.vlr.gg/123", None),
+        ("https://www.vlr.gg/123", None),
+        ("https://www.vlr.gg/123", None),
         ("https://www.vlr.gg/123", None),
         ("https://www.vlr.gg/123", None),
         ("https://www.vlr.gg/123", None),
@@ -617,7 +625,6 @@ async def test_fetch_with_retries_raises_circuit_open_error_when_circuit_is_open
 
     circuit_breaker.reset()
     circuit_breaker.fail_max = 5
-
 
 @pytest.mark.anyio
 async def test_fetch_with_retries_records_failure_after_exhausting_retries(monkeypatch):
