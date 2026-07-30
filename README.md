@@ -80,7 +80,8 @@ Interactive Swagger docs are available at `/`.
 
 | Route | Query Params | Cache |
 |---|---|---|
-| `GET /v2/news` | — | 10 min |
+| `GET /v2/news` | `page` | 10 min |
+| `GET /v2/news/{article_id}` | — | 10 min |
 | `GET /v2/match` | `q` (upcoming/upcoming_extended/live_score/results), `num_pages`, `from_page`, `to_page`, `max_retries`, `request_delay`, `timeout` | 30s–60s |
 | `GET /v2/match/details` | `match_id` | 5 min |
 | `GET /v2/rankings` | `region` | 1 hr |
@@ -109,10 +110,10 @@ aliases for their light variants. When VLR.GG does not provide a distinct dark
 asset, the dark field falls back to the light URL.
 
 ### `GET /v2/news`
-**Params:** none | **Cache:** 10 min
+**Params:** `page` (1–500, default 1) | **Cache:** 10 min
 
 ```
-GET /v2/news
+GET /v2/news?page=1
 ```
 
 <details><summary>Response</summary>
@@ -124,13 +125,68 @@ GET /v2/news
     "status": 200,
     "segments": [
       {
+        "article_id": "725612",
+        "slug": "timeline-americas-lcq-grand-final-postponed-after-nearly-12-hours",
         "title": "Article title",
         "description": "Article summary",
-        "date": "April 23, 2024",
+        "date": "July 30, 2026",
+        "published_date": "2026-07-30",
         "author": "author_name",
-        "url_path": "https://vlr.gg/..."
+        "region_code": "mx",
+        "url": "https://www.vlr.gg/725612/...",
+        "url_path": "https://www.vlr.gg/725612/..."
       }
-    ]
+    ],
+    "meta": { "page": 1, "total_pages": 126, "has_previous": false, "has_next": true }
+  }
+}
+```
+</details>
+
+### `GET /v2/news/{article_id}`
+**Params:** numeric VLR article ID (path) | **Cache:** 10 min
+
+```
+GET /v2/news/725612
+```
+
+Numeric VLR pages that are matches or forum threads return `404`; only pages
+with VLR's article structure are accepted. `content.html` preserves upstream
+VLR markup with absolute links and media URLs; sanitize it for your rendering
+environment. Use `content.text` when formatted markup is unnecessary.
+
+<details><summary>Response</summary>
+
+```json
+{
+  "status": "success",
+  "data": {
+    "status": 200,
+    "segments": [{
+      "article_id": "725612",
+      "slug": "timeline-americas-lcq-grand-final-postponed-after-nearly-12-hours",
+      "url": "https://www.vlr.gg/725612/...",
+      "title": "[TIMELINE] Americas LCQ grand final postponed after nearly 12 hours",
+      "description": "The best-of-five grand final ...",
+      "published_at": "2026-07-30T02:17:33+01:00",
+      "relative_time": "9 hours ago",
+      "author": {
+        "name": "Joseph Paldino", "handle": "ChickenJoe",
+        "url": "https://www.vlr.gg/user/ChickenJoe", "avatar": "https://owcdn.net/img/..."
+      },
+      "event": {
+        "id": "3063", "name": "VCL 26: Americas Last Chance Qualifier",
+        "url": "https://www.vlr.gg/event/3063/...", "logo": "https://owcdn.net/img/..."
+      },
+      "content": {
+        "html": "<p>Formatted article body ...</p>",
+        "text": "Readable article body ...",
+        "links": [{ "text": "Americas Play-Ins", "url": "https://www.vlr.gg/event/2977/..." }],
+        "media": [{ "type": "embed", "url": "https://clips.twitch.tv/embed?...", "alt": "" }]
+      },
+      "comments_url": "https://www.vlr.gg/725612/...#comments"
+    }],
+    "meta": { "article_id": "725612" }
   }
 }
 ```
@@ -664,7 +720,8 @@ Preserved for backwards compatibility. Most return `{"data": {"status": int, "se
 
 | Route | Query Params |
 |---|---|
-| `GET /news` | — |
+| `GET /news` | `page` |
+| `GET /news/{article_id}` | — |
 | `GET /match` | `q` (upcoming/upcoming_extended/live_score/results), pagination params |
 | `GET /match/details` | `match_id` |
 | `GET /stats` | Same filters as `/v2/stats` |

@@ -270,13 +270,71 @@ async def test_original_match_detail_strips_team_ids(client, monkeypatch):
 
 @pytest.mark.anyio
 async def test_v2_wrap_propagates_scraper_error_status(client, monkeypatch):
-    async def fake_news():
+    async def fake_news(page=1):
         return {"data": {"status": 502, "error": "upstream failure", "segments": []}}
 
     monkeypatch.setattr("routers.v2_router.get_news_data", fake_news)
     resp = await client.get("/v2/news")
     assert resp.status_code == 502
     assert "detail" in resp.json()
+
+
+@pytest.mark.anyio
+async def test_v2_news_forwards_page_and_article_id(client, monkeypatch):
+    captured = {}
+
+    async def fake_news(page=1):
+        captured["page"] = page
+        return {"data": {"status": 200, "segments": [], "meta": {"page": page}}}
+
+    async def fake_article(article_id):
+        captured["article_id"] = article_id
+        return {
+            "data": {
+                "status": 200,
+                "segments": [{"article_id": article_id}],
+            }
+        }
+
+    monkeypatch.setattr("routers.v2_router.get_news_data", fake_news)
+    monkeypatch.setattr("routers.v2_router.get_news_article_data", fake_article)
+
+    archive = await client.get("/v2/news?page=126")
+    article = await client.get("/v2/news/725612")
+
+    assert archive.status_code == 200
+    assert archive.json()["data"]["meta"] == {"page": 126}
+    assert article.status_code == 200
+    assert article.json()["data"]["segments"][0]["article_id"] == "725612"
+    assert captured == {"page": 126, "article_id": "725612"}
+
+
+@pytest.mark.anyio
+async def test_v2_news_validates_archive_page_and_article_id(client):
+    assert (await client.get("/v2/news?page=501")).status_code == 422
+    assert (await client.get("/v2/news/not-a-number")).status_code == 400
+
+
+@pytest.mark.anyio
+async def test_original_news_article_propagates_embedded_error_status(
+    client,
+    monkeypatch,
+):
+    async def fake_article(article_id):
+        return {
+            "data": {
+                "status": 404,
+                "error": f"news article {article_id} not found",
+                "segments": [],
+            }
+        }
+
+    monkeypatch.setattr("routers.vlr_router.get_news_article_data", fake_article)
+
+    response = await client.get("/news/725612")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "news article 725612 not found"
 
 
 @pytest.mark.anyio

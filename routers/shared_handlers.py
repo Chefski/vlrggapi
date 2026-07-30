@@ -16,6 +16,7 @@ from api.scrapers import (
     vlr_match_detail,
     vlr_match_results,
     vlr_news,
+    vlr_news_article,
     vlr_player,
     vlr_player_matches,
     vlr_rankings,
@@ -50,8 +51,12 @@ def _validate_non_paginated_match_query(
         )
 
 
-async def get_news_data() -> dict:
-    return await vlr_news()
+async def get_news_data(page: int = 1) -> dict:
+    return await vlr_news(page)
+
+
+async def get_news_article_data(article_id: str) -> dict:
+    return await vlr_news_article(article_id)
 
 
 async def get_stats_data(region: str, timespan: str | None = None, **filters) -> dict:
