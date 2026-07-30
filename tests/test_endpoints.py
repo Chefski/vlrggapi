@@ -316,6 +316,28 @@ async def test_v2_news_validates_archive_page_and_article_id(client):
 
 
 @pytest.mark.anyio
+async def test_original_news_article_propagates_embedded_error_status(
+    client,
+    monkeypatch,
+):
+    async def fake_article(article_id):
+        return {
+            "data": {
+                "status": 404,
+                "error": f"news article {article_id} not found",
+                "segments": [],
+            }
+        }
+
+    monkeypatch.setattr("routers.vlr_router.get_news_article_data", fake_article)
+
+    response = await client.get("/news/725612")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "news article 725612 not found"
+
+
+@pytest.mark.anyio
 async def test_v2_events_propagates_scraper_error_status(client, monkeypatch):
     async def fake_events(q, page):
         return {"data": {"status": 503, "error": "events unavailable", "segments": []}}

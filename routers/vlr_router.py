@@ -1,7 +1,7 @@
 """
 Original unversioned API router — preserved for backwards compatibility.
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from routers.shared_handlers import (
     get_event_agents_data,
@@ -68,7 +68,15 @@ async def VLR_news(
 @router.get("/news/{article_id}")
 async def VLR_news_article(article_id: str):
     validate_id_param(article_id, "article_id")
-    return await get_news_article_data(article_id)
+    result = await get_news_article_data(article_id)
+    data = result.get("data")
+    status_code = data.get("status") if isinstance(data, dict) else None
+    if isinstance(status_code, int) and status_code >= 400:
+        raise HTTPException(
+            status_code=status_code,
+            detail=data.get("error", "Upstream request failed"),
+        )
+    return result
 
 
 @router.get("/stats")
