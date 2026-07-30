@@ -17,8 +17,9 @@ async def test_version_endpoint(client):
     resp = await client.get("/version")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["version"] == "2.0.0"
-    assert data["default_api"] == "v2"
+    assert data["version"] == "3.0.0"
+    assert data["default_api"] == "v3"
+    assert data["compatibility_api"] == "v2"
 
 
 @pytest.mark.anyio

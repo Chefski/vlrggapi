@@ -41,10 +41,12 @@ _MODERATE_MATCH_Q = frozenset({"upcoming", "live_score"})
 
 
 def _normalise(path: str) -> str:
-    """Strip ``/v2`` prefix and trailing slash for uniform matching."""
+    """Strip a version prefix and trailing slash for uniform matching."""
     p = path.rstrip("/").lower()
-    if p.startswith("/v2"):
-        p = p[3:] or "/"
+    for version in ("/v2", "/v3"):
+        if p == version or p.startswith(version + "/"):
+            p = p[len(version) :] or "/"
+            break
     return p or "/"
 
 
@@ -58,6 +60,7 @@ def _match_tier(path: str, query: str) -> str | None:
     # Order matters: more specific paths are listed first.
     tiers: list[tuple[str, str | None]] = [
         ("/match/details", "expensive"),
+        ("/matches/", "expensive"),
         ("/events/matches", "moderate"),
         ("/health", "cheap"),
         ("/version", "cheap"),
@@ -71,6 +74,7 @@ def _match_tier(path: str, query: str) -> str | None:
         ("/player", "expensive"),
         ("/team", "expensive"),
         ("/match", None),
+        ("/matches", None),
     ]
 
     for prefix, tier in tiers:

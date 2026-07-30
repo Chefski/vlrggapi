@@ -23,15 +23,16 @@ If this API helps your projects, you can support ongoing maintenance and develop
 - **Version info:** `/version`
 
 ```bash
-curl https://vlrggapi.vercel.app/v2/news
-curl "https://vlrggapi.vercel.app/v2/match?q=live_score"
+curl https://vlrggapi.vercel.app/v3/news
+curl "https://vlrggapi.vercel.app/v3/matches?q=live_score"
+curl https://vlrggapi.vercel.app/v3/events/2978
 curl "http://127.0.0.1:3001/v2/player?id=9&timespan=all"
 ```
 
 ## Highlights
 
-- **V2-first API** - consistent response envelopes, validation, and per-endpoint caching
-- **Backwards compatibility** - original unversioned endpoints are still available
+- **Typed V3 API** - strict response schemas with native numbers, stable IDs, RFC3339 timestamps, and explicit nulls
+- **Backwards compatibility** - V2 and original unversioned endpoints remain available
 - **Deep match coverage** - detailed match, player, team, and event match endpoints
 - **Appearance-aware logos** - light and dark VLR.GG assets with backwards-compatible defaults
 - **Operational guardrails** - async HTTP, rate limiting, and bounded expensive scrapes
@@ -56,25 +57,75 @@ New endpoints provide deep coverage of individual matches, players, and teams:
 - **Per-endpoint caching** — in-memory TTL cache reduces load on vlr.gg
 - **Async HTTP** — scrapers use `httpx` for non-blocking I/O
 
+### Typed V3 API
+
+- **Strict contracts** — every response model rejects undocumented fields and is fully represented in OpenAPI
+- **Native types** — entity IDs, scores, rankings, statistics, percentages, and prize amounts are numbers rather than display strings
+- **Predictable absence** — unavailable optional values are `null`, not empty strings or placeholder text
+- **Canonical time** — machine-readable dates and datetimes use ISO 8601/RFC3339; upstream display text remains available where useful
+- **Consistent envelopes** — covered resources return `{ "api_version": "3", "data": ..., "meta": ... }`
+
 ## API Versions
 
-Both the original and V2 endpoints coexist. The original endpoints (`/news`, `/match`, etc.) are preserved unchanged for backwards compatibility. V2 endpoints (`/v2/news`, `/v2/match`, etc.) are the recommended API going forward.
+V3 is recommended for the typed resources listed below. V2 remains the compatibility API and continues to cover player, team, search, rankings, and experimental event subresources. The original endpoints (`/news`, `/match`, etc.) are preserved unchanged.
 
-| Feature | Original | V2 |
-|---|---|---|
-| Response shape | Varies per endpoint | Consistent `{"status": "success", "data": {...}}` |
-| Input validation | None | HTTP 400 on invalid params |
-| Caching | None | Per-endpoint TTL cache |
+| Feature | Original | V2 | V3 |
+|---|---|---|---|
+| Response shape | Varies per endpoint | `{"status": "success", "data": {...}}` | `{"api_version": "3", "data": ..., "meta": ...}` |
+| Contract | Legacy display strings | Backwards-compatible additive fields | Strict typed models and concrete OpenAPI schemas |
+| Missing optional values | Usually empty strings | Usually empty strings | `null` |
+| Input validation | None | HTTP 400 on invalid params | HTTP 400/422 on invalid params |
+| Caching | None | Per-endpoint TTL cache | Shares the V2 scraper cache |
 
 Interactive Swagger docs are available at `/`.
 
 ## Operational Notes
 
-- **Recommended base path** - use `/v2` for new integrations
+- **Recommended base path** - use `/v3` for covered resources and `/v2` where no V3 route exists
 - **Current version endpoint** - `GET /version` returns the current API version and default API
-- **Rate limit** - requests are limited to `600/minute`
-- **Error handling** - V2 returns HTTP 400 for invalid input and propagates upstream failures with HTTP error codes
+- **Rate limit** - endpoint tiers allow 200 cheap, 60 moderate, or 20 expensive requests per minute per client
+- **Error handling** - V2 and V3 return HTTP errors for invalid input and propagate upstream failures with HTTP error codes
 - **Deployment targets** - Vercel for the hosted API, Docker for containerized self-hosting
+
+## V3 Endpoint Overview
+
+V3 provides typed contracts over the news, statistics, event, match-list, and
+match-detail data exposed by VLR.GG. It does not change the existing V2 or
+unversioned response shapes.
+
+| Route | Purpose |
+|---|---|
+| `GET /v3/news?page=1` | Paginated news archive |
+| `GET /v3/news/{article_id}` | Full article content, links, and media |
+| `GET /v3/stats?region=all` | Filterable global player statistics |
+| `GET /v3/matches?q=upcoming` | Upcoming, live, or completed match lists |
+| `GET /v3/matches/{match_id}` | Full match, maps, rounds, economy, streams, VODs, and history |
+| `GET /v3/events?q=upcoming&page=1` | Event browser |
+| `GET /v3/events/{event_id}` | Event details, stages, teams, prizes, groups, and brackets |
+| `GET /v3/events/{event_id}/matches` | Canonical event match list |
+| `GET /v3/events/{event_id}/stats` | Typed event player statistics |
+
+Every successful response follows this envelope:
+
+```json
+{
+  "api_version": "3",
+  "data": {
+    "id": 715117,
+    "status": "completed",
+    "starts_at": "2026-07-29T19:00:00Z",
+    "round_number": null
+  },
+  "meta": {
+    "source": "vlr.gg",
+    "id": 715117
+  }
+}
+```
+
+Fields that VLR.GG does not expose reliably remain `null`; V3 does not invent
+IDs or timestamps. See the interactive Swagger docs at `/` for each complete
+schema and its query parameters.
 
 ## V2 Endpoint Overview
 
