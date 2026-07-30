@@ -13,7 +13,12 @@ from utils.cache_manager import CacheManager, cache_manager
 from utils.constants import CACHE_TTL_EVENTS, CACHE_TTL_MATCH_DETAIL
 from utils.error_handling import validate_event_query, validate_match_query, validate_region, validate_timespan
 from utils.html_parsers import parse_eta_to_timedelta
-from utils.http_client import CircuitOpenError, circuit_breaker, fetch_with_retries
+from utils.http_client import (
+    CircuitOpenError,
+    circuit_breaker,
+    fetch_theme_variants,
+    fetch_with_retries,
+)
 from utils.pagination import PaginationConfig, scrape_multiple_pages
 
 # --- PaginationConfig.get_page_range ---
@@ -671,6 +676,36 @@ async def test_fetch_with_retries_does_not_count_429_as_circuit_failure(monkeypa
     # Two calls each exhausting retries on 429 should NOT trip the circuit
     await fetch_with_retries("https://example.test/resource", client=client, max_retries=2)
     await fetch_with_retries("https://example.test/resource", client=client, max_retries=2)
+    assert circuit_breaker.allow_request("https://example.test/resource") is True
+
+    circuit_breaker.reset()
+    circuit_breaker.fail_max = 5
+
+
+@pytest.mark.anyio
+async def test_dark_theme_failure_does_not_open_shared_circuit(monkeypatch):
+    circuit_breaker.reset()
+    circuit_breaker.fail_max = 1
+
+    class ThemeClient:
+        async def get(self, url, timeout=None, headers=None):
+            if "%3A1%7D" in headers.get("Cookie", ""):
+                raise httpx.ReadTimeout("dark theme timed out")
+            return FakeResponse(200)
+
+    async def fake_sleep(_delay):
+        pass
+
+    monkeypatch.setattr("utils.http_client.asyncio.sleep", fake_sleep)
+
+    light, dark = await fetch_theme_variants(
+        "https://example.test/resource",
+        client=ThemeClient(),
+        max_retries=2,
+    )
+
+    assert light.status_code == 200
+    assert dark is light
     assert circuit_breaker.allow_request("https://example.test/resource") is True
 
     circuit_breaker.reset()

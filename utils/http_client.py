@@ -148,6 +148,7 @@ async def fetch_with_retries(
     request_delay: float = DEFAULT_REQUEST_DELAY,
     use_etag: bool = False,
     extra_headers: dict[str, str] | None = None,
+    record_circuit_outcome: bool = True,
 ) -> httpx.Response:
     """Fetch a URL with bounded retries for transient upstream failures.
 
@@ -159,6 +160,10 @@ async def fetch_with_retries(
     When use_etag is True, automatically sends If-None-Match and stores ETag
     from 200 responses. 304 responses are returned as-is (caller should check
     response.status_code and serve cached content).
+
+    Set ``record_circuit_outcome`` to False for optional requests whose success
+    or failure must not alter shared host health. The request still respects an
+    already-open circuit.
     """
     if not circuit_breaker.allow_request(url):
         raise CircuitOpenError(
@@ -183,7 +188,8 @@ async def fetch_with_retries(
             response = await client.get(url, timeout=timeout, headers=request_headers if request_headers else None)
         except httpx.RequestError as exc:
             if attempt >= retries:
-                circuit_breaker.record_failure(url)
+                if record_circuit_outcome:
+                    circuit_breaker.record_failure(url)
                 raise
             logger.warning(
                 "Retrying %s after request error on attempt %d/%d: %s",
@@ -200,15 +206,17 @@ async def fetch_with_retries(
                 if etag is not None:
                     _etags[url] = etag
             elif response.status_code == 304:
-                circuit_breaker.record_success(url)
+                if record_circuit_outcome:
+                    circuit_breaker.record_success(url)
                 return response
 
         empty_body = response.status_code == 200 and len(response.content) < MIN_RESPONSE_SIZE
 
         if not empty_body and (response.status_code not in RETRYABLE_STATUS_CODES or attempt >= retries):
             if response.status_code not in RETRYABLE_STATUS_CODES:
-                circuit_breaker.record_success(url)
-            elif response.status_code != 429:
+                if record_circuit_outcome:
+                    circuit_breaker.record_success(url)
+            elif response.status_code != 429 and record_circuit_outcome:
                 circuit_breaker.record_failure(url)
             return response
 
@@ -265,6 +273,7 @@ async def fetch_theme_variants(
             max_retries=max_retries,
             request_delay=request_delay,
             extra_headers={"Cookie": VLR_THEME_COOKIES[appearance]},
+            record_circuit_outcome=appearance == "light",
         )
 
     light_result, dark_result = await asyncio.gather(

@@ -294,3 +294,38 @@ async def test_vlr_match_detail_uses_empty_team_id_when_header_link_is_missing(m
     assert teams[0]["id"] == "100"
     assert teams[1]["id"] == ""
     cache_manager.clear_all()
+
+
+@pytest.mark.anyio
+async def test_vlr_match_detail_pairs_two_missing_team_ids_by_position(monkeypatch):
+    cache_manager.clear_all()
+    light_html = """
+    <html>
+      <div class="match-header-link-name mod-1"><div>Team One</div></div>
+      <div class="match-header-link-name mod-2"><div>Team Two</div></div>
+      <div class="match-header-vs">
+        <img src="//owcdn.net/img/team-one-light.png">
+        <img src="//owcdn.net/img/team-two-light.png">
+      </div>
+    </html>
+    """
+    dark_html = light_html.replace("-light.png", "-dark.png")
+
+    async def fake_fetch_theme_variants(url, *, client=None):
+        return FakeResponse(200, light_html), FakeResponse(200, dark_html)
+
+    monkeypatch.setattr(
+        "api.scrapers.match_detail.crawler.fetch_theme_variants",
+        fake_fetch_theme_variants,
+    )
+    monkeypatch.setattr("api.scrapers.match_detail.crawler.get_http_client", lambda: object())
+
+    data = await vlr_match_detail("999")
+    teams = data["data"]["segments"][0]["teams"]
+
+    assert [team["id"] for team in teams] == ["", ""]
+    assert [team["logo_dark"] for team in teams] == [
+        "https://owcdn.net/img/team-one-dark.png",
+        "https://owcdn.net/img/team-two-dark.png",
+    ]
+    cache_manager.clear_all()
