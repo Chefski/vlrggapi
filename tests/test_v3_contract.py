@@ -356,7 +356,12 @@ def test_match_detail_adapter_normalizes_fidelity_fields():
                             "$ (won)": "3 (2)",
                             "$$ (won)": "5 (3)",
                             "$$$ (won)": "10 (7)",
-                        }
+                        },
+                        {
+                            "team_id": "20",
+                            "Team": "BET",
+                            "Pistol": "50%",
+                        },
                     ],
                 }
             ],
@@ -381,8 +386,12 @@ def test_match_detail_adapter_normalizes_fidelity_fields():
     assert game.players.team1[0].kast_percent == 80.0
     assert game.side_scores.team1.attack == 8
     assert game.rounds[0].score_after.team1 == 1
+    assert game.economy[0].pistol_wins == 2
+    assert game.economy[0].pistol_win_percent is None
     assert game.economy[0].full.rounds == 10
     assert game.economy[0].full.wins == 7
+    assert game.economy[1].pistol_wins is None
+    assert game.economy[1].pistol_win_percent == 50.0
 
 
 @pytest.mark.anyio

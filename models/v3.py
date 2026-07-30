@@ -447,6 +447,7 @@ class V3EconomyRow(V3Model):
     team_id: int | None = None
     team_tag: str | None = None
     pistol_wins: int | None = None
+    pistol_win_percent: float | None = None
     eco: V3EconomyBucket
     low: V3EconomyBucket
     medium: V3EconomyBucket

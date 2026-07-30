@@ -779,10 +779,15 @@ def _economy_bucket(value) -> V3EconomyBucket:
 
 
 def _economy(source: dict) -> V3EconomyRow:
+    pistol = nullable_text(source.get("Pistol"))
+    pistol_wins = optional_int(source.get("Pistol Won"))
+    if pistol_wins is None and pistol and "%" not in pistol:
+        pistol_wins = optional_int(pistol)
     return V3EconomyRow(
         team_id=entity_id(source.get("team_id")),
         team_tag=nullable_text(source.get("Team")),
-        pistol_wins=optional_int(source.get("Pistol Won")),
+        pistol_wins=pistol_wins,
+        pistol_win_percent=optional_percent(pistol) if pistol and "%" in pistol else None,
         eco=_economy_bucket(source.get("Eco (won)")),
         low=_economy_bucket(source.get("$ (won)")),
         medium=_economy_bucket(source.get("$$ (won)")),
