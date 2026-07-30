@@ -2,6 +2,11 @@ import asyncio
 import logging
 import re
 
+from api.scrapers.match_detail.parsers import (
+    _parse_event_info,
+    _parse_match_header,
+    _parse_teams,
+)
 from utils.cache_manager import cache_manager
 from utils.constants import (
     CACHE_TTL_LIVE,
@@ -24,6 +29,11 @@ from utils.html_parsers import (
     parse_match_timestamp,
 )
 from utils.http_client import fetch_theme_variants, fetch_with_retries, get_http_client
+from utils.match_records import (
+    build_match_record,
+    match_team,
+    normalize_match_status,
+)
 from utils.pagination import PaginationConfig, scrape_multiple_pages
 
 logger = logging.getLogger(__name__)
@@ -38,6 +48,26 @@ def _safe_flag(team_node) -> str:
     return flag_class.replace(" mod-", "").replace("16", "_")
 
 
+def _country_code(value: str) -> str:
+    """Normalize legacy homepage/match-card flag values to a country code."""
+    return (
+        value.removeprefix("flag_")
+        .removeprefix("flag ")
+        .removeprefix("mod-")
+        .replace("_", "")
+    )
+
+
+def _match_list_meta(**extra) -> dict:
+    return {"record_schema": "match-list", **extra}
+
+
+def _split_event_context(value: str) -> tuple[str, str]:
+    """Split VLR labels such as Group Stage–Week 3 into stage and series."""
+    parts = re.split(r"\s*(?:[–—]|:)\s*", value, maxsplit=1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return "", value
 
 
 @handle_scraper_errors
@@ -66,10 +96,36 @@ async def vlr_upcoming_matches(num_pages=1, from_page=None, to_page=None):
             match_event = extract_text_content(item.css_first(".h-match-preview-event"))
             match_series = extract_text_content(item.css_first(".h-match-preview-series"))
             timestamp = parse_match_timestamp(item, "")
-            url_path = build_full_url(item.attributes.get("href", ""))
+            href = item.attributes.get("href", "")
+            match_id, _ = parse_href_id_slug(href)
+            url_path = build_full_url(href)
+            event_stage, event_series = _split_event_context(match_series)
+            canonical = build_match_record(
+                source="upcoming",
+                match_id=match_id,
+                url=url_path,
+                status="scheduled",
+                status_text=extract_text_content(item.css_first(".h-match-eta")),
+                relative_time=extract_text_content(item.css_first(".h-match-eta")),
+                event_name=match_event,
+                event_stage=event_stage,
+                event_series=event_series,
+                teams=[
+                    match_team(
+                        name=team1["name"],
+                        country_code=_country_code(team1["flag"]),
+                    ),
+                    match_team(
+                        name=team2["name"],
+                        country_code=_country_code(team2["flag"]),
+                    ),
+                ],
+            )
 
             result.append(
                 {
+                    "match_id": match_id,
+                    "url": url_path,
                     "team1": team1["name"],
                     "team2": team2["name"],
                     "flag1": team1["flag"],
@@ -79,10 +135,17 @@ async def vlr_upcoming_matches(num_pages=1, from_page=None, to_page=None):
                     "match_event": match_event,
                     "unix_timestamp": timestamp,
                     "match_page": url_path,
+                    "match": canonical,
                 }
             )
 
-        data = {"data": {"status": status, "segments": result}}
+        data = {
+            "data": {
+                "status": status,
+                "segments": result,
+                "meta": _match_list_meta(),
+            }
+        }
 
         return data
 
@@ -187,6 +250,9 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
                 light_detail_resp, dark_detail_resp = detail_response_pair
                 match_html = parse_html(light_detail_resp.text)
                 dark_match_html = parse_html(dark_detail_resp.text)
+                detail_event = _parse_event_info(match_html)
+                detail_header = _parse_match_header(match_html)
+                detail_teams = _parse_teams(match_html)
 
                 light_logos = [
                     normalize_image_url(img.attributes.get("src", ""))
@@ -215,7 +281,46 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
                     map_number_match = re.search(r"^\d+", map_text)
                     map_number = map_number_match.group(0) if map_number_match else "Unknown"
 
+            else:
+                detail_event = {}
+                detail_header = {}
+                detail_teams = []
+
             rt = match_data["round_texts"]
+            canonical_teams = []
+            for index in range(2):
+                detail_team = detail_teams[index] if index < len(detail_teams) else {}
+                canonical_teams.append(
+                    match_team(
+                        team_id=detail_team.get("id", ""),
+                        name=match_data["teams"][index],
+                        tag=detail_team.get("tag", ""),
+                        country_code=_country_code(match_data["flags"][index]),
+                        logo=team_logos_light[index],
+                        score=match_data["scores"][index],
+                    )
+                )
+            event_stage, event_series = _split_event_context(
+                detail_event.get("series", "") or match_data["match_series"]
+            )
+            canonical = build_match_record(
+                source="live",
+                match_id=match_data["match_id"],
+                url=match_data["url_path"],
+                status="live",
+                status_text="LIVE",
+                scheduled_at=detail_header.get("scheduled_at", ""),
+                date=detail_header.get("date", ""),
+                event_id=detail_event.get("id", ""),
+                event_name=detail_event.get("name", "")
+                or match_data["match_event"],
+                event_stage=event_stage,
+                event_stage_slug=detail_event.get("stage", ""),
+                event_series=event_series,
+                event_url=detail_event.get("url", ""),
+                event_logo=detail_event.get("logo", ""),
+                teams=canonical_teams,
+            )
             result.append(
                 {
                     "team1": match_data["teams"][0],
@@ -242,10 +347,18 @@ async def vlr_live_score(num_pages=1, from_page=None, to_page=None):
                     "unix_timestamp": match_data["timestamp"],
                     "match_page": match_data["url_path"],
                     "match_id": match_data["match_id"],
+                    "url": match_data["url_path"],
+                    "match": canonical,
                 }
             )
 
-        data = {"data": {"status": status, "segments": result}}
+        data = {
+            "data": {
+                "status": status,
+                "segments": result,
+                "meta": _match_list_meta(),
+            }
+        }
 
         return data
 
@@ -259,7 +372,8 @@ def _parse_single_match(item, date_str, page):
         return None
 
     href = item.attributes.get("href", "")
-    url_path = "https://www.vlr.gg" + href if href else ""
+    match_id, _ = parse_href_id_slug(href)
+    url_path = build_full_url(href)
 
     eta = item.css_first(".ml-status").text().strip() if item.css_first(".ml-status") else ""
     if not eta:
@@ -315,8 +429,48 @@ def _parse_single_match(item, date_str, page):
             tourney_icon_url = normalize_image_url(icon_src)
 
     timestamp = parse_match_timestamp(item, date_str)
+    time_text = extract_text_content(item.css_first(".match-item-time"))
+    relative_time = extract_text_content(item.css_first(".ml-eta"))
+    note = extract_text_content(item.css_first(".match-item-note"))
+    status = normalize_match_status(eta, relative_time)
+    team_nodes = item.css(".match-item-vs-team")
+    canonical_teams = [
+        match_team(
+            name=teams[index],
+            country_code=_country_code(flags[index]),
+            score=scores_list[index],
+            is_winner=(
+                index < len(team_nodes)
+                and "mod-winner" in team_nodes[index].attributes.get("class", "")
+            ),
+        )
+        for index in range(2)
+    ]
+    event_stage, event_series = _split_event_context(match_series)
+    canonical = build_match_record(
+        source="matches",
+        match_id=match_id,
+        url=url_path,
+        status=status,
+        status_text=eta,
+        date=date_str,
+        time=time_text,
+        relative_time=relative_time,
+        event_name=tourney,
+        event_stage=event_stage,
+        event_series=event_series,
+        event_logo=tourney_icon_url,
+        teams=canonical_teams,
+        note=note,
+        page=page,
+    )
 
     return {
+        "match_id": match_id,
+        "url": url_path,
+        "status": status,
+        "date": date_str,
+        "time": time_text,
         "team1": teams[0],
         "team2": teams[1],
         "flag1": flags[0],
@@ -330,6 +484,7 @@ def _parse_single_match(item, date_str, page):
         "match_page": url_path,
         "tournament_icon": tourney_icon_url,
         "page_number": page,
+        "match": canonical,
     }
 
 
@@ -340,7 +495,7 @@ def _parse_upcoming_page(html: HTMLParser, page: int) -> list[dict]:
 
     if date_labels:
         for label in date_labels:
-            date_str = label.text().strip()
+            date_str = label.text(deep=False, strip=True)
             sibling = label.next
             card = None
             while sibling is not None:
@@ -371,77 +526,128 @@ def _parse_upcoming_page(html: HTMLParser, page: int) -> list[dict]:
     return page_results
 
 
+def _parse_single_result(item, date_str: str, page: int) -> dict | None:
+    """Parse one completed global match card with legacy and canonical fields."""
+    href = item.attributes.get("href", "")
+    if not href:
+        return None
+    match_id, _ = parse_href_id_slug(href)
+    url_path = build_full_url(href)
+
+    team_nodes = item.css(".match-item-vs-team")
+    teams = []
+    legacy_flags = []
+    for team_node in team_nodes[:2]:
+        flag_node = team_node.css_first(".flag")
+        flag_class = flag_node.attributes.get("class", "") if flag_node else ""
+        legacy_flags.append(flag_class.replace(" mod-", "_"))
+        teams.append(
+            match_team(
+                name=extract_text_content(
+                    team_node.css_first(".match-item-vs-team-name")
+                ),
+                country_code=_country_code(flag_class),
+                score=extract_text_content(
+                    team_node.css_first(".match-item-vs-team-score")
+                ),
+                is_winner="mod-winner" in team_node.attributes.get("class", ""),
+            )
+        )
+    while len(teams) < 2:
+        teams.append(match_team())
+        legacy_flags.append("")
+
+    relative_time = extract_text_content(item.css_first(".ml-eta"))
+    completed_ago = (
+        relative_time if relative_time.casefold().endswith("ago") else f"{relative_time} ago"
+    ).strip()
+    status_text = extract_text_content(item.css_first(".ml-status"))
+    event_series = extract_text_content(
+        item.css_first(".match-item-event-series")
+    )
+    event_series_legacy = event_series.replace("\u2013", "-")
+    event_elem = item.css_first(".match-item-event")
+    event_lines = [
+        line.strip() for line in event_elem.text().splitlines() if line.strip()
+    ] if event_elem else []
+    event_name = event_lines[-1] if event_lines else ""
+    icon_elem = item.css_first(".match-item-icon img")
+    event_logo = normalize_image_url(
+        icon_elem.attributes.get("src", "") if icon_elem else ""
+    )
+    time_text = extract_text_content(item.css_first(".match-item-time"))
+    note = extract_text_content(item.css_first(".match-item-note"))
+    event_stage, canonical_series = _split_event_context(event_series)
+    canonical = build_match_record(
+        source="results",
+        match_id=match_id,
+        url=url_path,
+        status="completed",
+        status_text=status_text,
+        date=date_str,
+        time=time_text,
+        relative_time=completed_ago,
+        event_name=event_name,
+        event_stage=event_stage,
+        event_series=canonical_series,
+        event_logo=event_logo,
+        teams=teams,
+        note=note,
+        page=page,
+    )
+    return {
+        "match_id": match_id,
+        "url": url_path,
+        "status": "completed",
+        "date": date_str,
+        "time": time_text,
+        "team1": teams[0]["name"],
+        "team2": teams[1]["name"],
+        "score1": teams[0]["score"],
+        "score2": teams[1]["score"],
+        "flag1": legacy_flags[0],
+        "flag2": legacy_flags[1],
+        "time_completed": completed_ago,
+        "round_info": event_series_legacy,
+        "tournament_name": event_name,
+        "match_page": url_path,
+        "tournament_icon": event_logo,
+        "page_number": page,
+        "match": canonical,
+    }
+
+
 def _parse_results_page(html: HTMLParser, page: int) -> list[dict]:
     """Parse callback for scrape_multiple_pages — match results."""
     page_results = []
-    items = html.css("a.wf-module-item")
-
-    for item in items:
-        try:
-            href = item.attributes["href"]
-            url_path = build_full_url(href)
-            eta = item.css_first("div.ml-eta").text() + " ago"
-            rounds = (
-                item.css_first("div.match-item-event-series")
-                .text()
-                .replace("\u2013", "-")
-                .replace("\n", "")
-                .replace("\t", "")
-            )
-            tourney = (
-                item.css_first("div.match-item-event")
-                .text()
-                .replace("\t", " ")
-                .strip()
-                .split("\n")[1]
-                .strip()
-            )
-            tourney_icon_url = f"https:{item.css_first('img').attributes['src']}"
-
+    labels = html.css(".wf-label.mod-large")
+    if labels:
+        for label in labels:
+            date_str = label.text(deep=False, strip=True)
+            card = label.next
+            while card is not None and (
+                not getattr(card, "attributes", None)
+                or "wf-card" not in card.attributes.get("class", "")
+            ):
+                card = card.next
+            if card is None:
+                continue
+            items = card.css("a.wf-module-item.match-item")
+            for item in items:
+                try:
+                    parsed = _parse_single_result(item, date_str, page)
+                    if parsed:
+                        page_results.append(parsed)
+                except Exception as exc:
+                    logger.warning("Failed to parse result on page %d: %s", page, exc)
+    else:
+        for item in html.css("a.wf-module-item.match-item"):
             try:
-                team_array = (
-                    item.css_first("div.match-item-vs").css_first("div:nth-child(2)").text()
-                )
-            except Exception:
-                team_array = "TBD"
-            team_array = (
-                team_array.replace("\t", " ")
-                .replace("\n", " ")
-                .strip()
-                .split("                                  ")
-            )
-            team1 = team_array[0]
-            score1 = team_array[1].replace(" ", "").strip()
-            team2 = team_array[4].strip()
-            score2 = team_array[-1].replace(" ", "").strip()
-
-            flag_list = [
-                flag_parent.attributes["class"].replace(" mod-", "_")
-                for flag_parent in item.css(".flag")
-            ]
-            flag1 = flag_list[0] if len(flag_list) > 0 else ""
-            flag2 = flag_list[1] if len(flag_list) > 1 else ""
-
-            page_results.append(
-                {
-                    "team1": team1,
-                    "team2": team2,
-                    "score1": score1,
-                    "score2": score2,
-                    "flag1": flag1,
-                    "flag2": flag2,
-                    "time_completed": eta,
-                    "round_info": rounds,
-                    "tournament_name": tourney,
-                    "match_page": url_path,
-                    "tournament_icon": tourney_icon_url,
-                    "page_number": page,
-                }
-            )
-        except Exception as e:
-            logger.warning("Failed to parse result on page %d: %s", page, e)
-            continue
-
+                parsed = _parse_single_result(item, "", page)
+                if parsed:
+                    page_results.append(parsed)
+            except Exception as exc:
+                logger.warning("Failed to parse result on page %d: %s", page, exc)
     return page_results
 
 

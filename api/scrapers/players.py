@@ -17,6 +17,7 @@ from utils.html_parsers import (
     parse_html,
 )
 from utils.http_client import fetch_with_retries, get_http_client
+from utils.match_records import parse_history_match_record
 
 logger = logging.getLogger(__name__)
 
@@ -387,7 +388,7 @@ def _parse_total_winnings(html: HTMLParser) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_player_match_item(item) -> dict | None:
+def _parse_player_match_item(item, *, page: int | None = None) -> dict | None:
     """
     Parse a single match item from the player match history page.
 
@@ -450,6 +451,11 @@ def _parse_player_match_item(item) -> dict | None:
         "team2": teams[1],
         "score": score,
         "result": result,
+        "match": parse_history_match_record(
+            item,
+            source="player",
+            page=page,
+        ),
     }
 
 
@@ -539,7 +545,7 @@ async def vlr_player_matches(player_id: str, page: int = 1) -> dict:
 
         for item in html.css("a.wf-card.m-item"):
             try:
-                parsed = _parse_player_match_item(item)
+                parsed = _parse_player_match_item(item, page=page)
                 if parsed is not None:
                     matches.append(parsed)
             except Exception as exc:
@@ -551,7 +557,7 @@ async def vlr_player_matches(player_id: str, page: int = 1) -> dict:
         if not matches:
             for item in html.css("a.wf-card.fc-flex.m-item"):
                 try:
-                    parsed = _parse_player_match_item(item)
+                    parsed = _parse_player_match_item(item, page=page)
                     if parsed is not None:
                         matches.append(parsed)
                 except Exception as exc:
@@ -564,7 +570,11 @@ async def vlr_player_matches(player_id: str, page: int = 1) -> dict:
             "data": {
                 "status": status,
                 "segments": matches,
-                "meta": {"page": page},
+                "meta": {
+                    "page": page,
+                    "record_schema": "match-list",
+                    "player_id": player_id,
+                },
             }
         }
 

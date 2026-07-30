@@ -3,7 +3,7 @@ Common HTML parsing utilities for VLR.GG scrapers
 """
 import re
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from selectolax.lexbor import LexborHTMLParser
@@ -127,7 +127,7 @@ def build_full_url(href: str, base_url: str = "https://www.vlr.gg") -> str:
     """Build full URL from relative href"""
     if not href:
         return ""
-    return base_url + href if href.startswith("/") else href
+    return urljoin(f"{base_url.rstrip('/')}/", href)
 
 
 def extract_tournament_icon(item) -> str:

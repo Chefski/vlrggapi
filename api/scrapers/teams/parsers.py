@@ -15,6 +15,7 @@ from utils.html_parsers import (
     normalize_image_url,
     parse_href_id_slug,
 )
+from utils.match_records import parse_history_match_record
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +309,12 @@ def _extract_date_from_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_team_match_item(item) -> dict | None:
+def _parse_team_match_item(
+    item,
+    *,
+    team_id: str = "",
+    page: int | None = None,
+) -> dict | None:
     """Parse one match row from the team match history page."""
     anchor = item if item.tag == "a" else item.css_first("a")
     href = _attr(anchor, "href") if anchor else _attr(item, "href")
@@ -364,6 +370,12 @@ def _parse_team_match_item(item) -> dict | None:
         "team2": teams[1],
         "score": score,
         "result": result,
+        "match": parse_history_match_record(
+            item,
+            source="team",
+            context_team_id=team_id,
+            page=page,
+        ),
     }
 
 

@@ -105,7 +105,7 @@ async def v2_rankings(
     return _wrap_v2(result)
 
 
-@router.get("/match", response_model=V2Response, summary="Matches by type", description="Get upcoming, live, or completed match data. Supports pagination for results and upcoming_extended.")
+@router.get("/match", response_model=V2Response, summary="Matches by type", description="Get upcoming, live, or completed match data. Every segment includes the shared canonical match record; legacy aliases remain available. Supports pagination for results and upcoming_extended.")
 async def v2_match(
     q: str = Query(..., description="Match type: upcoming, upcoming_extended, live_score, results"),
     num_pages: int = Query(1, description="Number of pages to scrape", ge=1, le=MAX_MATCH_QUERY_BOUND),
@@ -148,7 +148,7 @@ async def v2_match_detail(
     return _wrap_v2(result)
 
 
-@router.get("/player", response_model=V2Response, summary="Player data", description="Get player profile or match history via q parameter.")
+@router.get("/player", response_model=V2Response, summary="Player data", description="Get player profile or match history via q parameter. Match-history segments include the shared canonical match record.")
 async def v2_player(
     id: str = Query(..., description="VLR.GG player ID"),
     q: str = Query("profile", description="Data type: profile, matches"),
@@ -167,7 +167,7 @@ async def v2_player(
     return _wrap_v2(result)
 
 
-@router.get("/team", response_model=V2Response, summary="Team data", description="Get team profile, match history, roster transactions, or map stats via q parameter.")
+@router.get("/team", response_model=V2Response, summary="Team data", description="Get team profile, match history, roster transactions, or map stats via q parameter. Match-history segments include the shared canonical match record.")
 async def v2_team(
     id: str = Query(..., description="VLR.GG team ID"),
     q: str = Query("profile", description="Data type: profile, matches, transactions, stats"),
@@ -188,7 +188,7 @@ async def v2_team(
     return _wrap_v2(result)
 
 
-@router.get("/events/matches", response_model=V2Response, summary="Event matches", description="List all matches for an event — scores, teams, dates. Use event IDs from GET /v2/events.")
+@router.get("/events/matches", response_model=V2Response, summary="Event matches", description="List all matches for an event using the shared canonical match record plus legacy aliases. Use event IDs from GET /v2/events.")
 async def v2_event_matches(
     event_id: str = Query(..., description="VLR.GG event ID"),
 ):
