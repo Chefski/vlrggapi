@@ -5,8 +5,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from models import V2Response
 from routers.shared_handlers import (
+    get_event_agents_data,
     get_event_detail_data,
     get_event_matches_data,
+    get_event_news_data,
+    get_event_pickem_data,
+    get_event_stats_data,
     get_events_data,
     get_health_data,
     get_match_data,
@@ -196,10 +200,59 @@ async def v2_event_matches(
 @router.get("/event/{event_id}", response_model=V2Response, summary="Event detail", description="Get full event detail — prizes, teams, standings, dates, and prize pool.")
 async def v2_event_detail(
     event_id: str,
+    stage: str | None = Query(None, description="Stage slug returned by this endpoint (for example group-stage or playoffs)"),
 ):
     validate_id_param(event_id, "event_id")
-    result = await get_event_detail_data(event_id)
+    result = await get_event_detail_data(event_id, stage)
     return _wrap_v2(result)
+
+
+@router.get("/event/{event_id}/stats", response_model=V2Response, summary="Event player stats", description="Get event-scoped player stats with VLR.GG stage, side, role, agent, map, rounds, and sort filters.")
+async def v2_event_stats(
+    event_id: str,
+    sort: str = Query("rating2", description="Stats column to sort by"),
+    sort_dir: str = Query("desc", alias="dir", description="Sort direction: asc or desc"),
+    side: str = Query("all", description="Side: all, t, or ct"),
+    role: str = Query("all", description="Role filter"),
+    agent: str = Query("all", description="Agent slug or all"),
+    map_id: str = Query("all", description="VLR map ID or all"),
+    min_rounds: int = Query(0, description="Minimum rounds"),
+    exclude_series: str | None = Query(None, alias="exclude", description="Dot-separated subseries IDs to exclude"),
+):
+    validate_id_param(event_id, "event_id")
+    result = await get_event_stats_data(
+        event_id,
+        sort=sort,
+        direction=sort_dir,
+        side=side,
+        role=role,
+        agent=agent,
+        map_id=map_id,
+        min_rounds=min_rounds,
+        exclude=exclude_series,
+    )
+    return _wrap_v2(result)
+
+
+@router.get("/event/{event_id}/agents", response_model=V2Response, summary="Event agent data", description="Get event agent pick rates by map and team compositions.")
+async def v2_event_agents(
+    event_id: str,
+    exclude_series: str | None = Query(None, alias="exclude", description="Dot-separated subseries IDs to exclude"),
+):
+    validate_id_param(event_id, "event_id")
+    return _wrap_v2(await get_event_agents_data(event_id, exclude_series))
+
+
+@router.get("/event/{event_id}/news", response_model=V2Response, summary="Event news", description="Get news articles related to an event.")
+async def v2_event_news(event_id: str):
+    validate_id_param(event_id, "event_id")
+    return _wrap_v2(await get_event_news_data(event_id))
+
+
+@router.get("/event/{event_id}/pickem", response_model=V2Response, summary="Event Pick'em", description="Get public Pick'em fixtures, results, and leaderboard distribution.")
+async def v2_event_pickem(event_id: str):
+    validate_id_param(event_id, "event_id")
+    return _wrap_v2(await get_event_pickem_data(event_id))
 
 
 @router.get("/search", response_model=V2Response, summary="Search", description="Search VLR.GG for teams, players, events, and series. Returns categorized results.")

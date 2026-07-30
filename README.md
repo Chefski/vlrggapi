@@ -86,7 +86,11 @@ Interactive Swagger docs are available at `/`.
 | `GET /v2/rankings` | `region` | 1 hr |
 | `GET /v2/stats` | `region`; `timespan` or `span`; tier/date/side/role/agent/map/threshold/sort filters | 30 min |
 | `GET /v2/events` | `q` (upcoming/completed/live), `page` | 30 min |
-| `GET /v2/event/{id}` | `event_id` (path) | 30 min |
+| `GET /v2/event/{id}` | `event_id` (path), `stage` | 30 min |
+| `GET /v2/event/{id}/stats` | side/role/agent/map/rounds/sort/stage exclusion filters | 10 min |
+| `GET /v2/event/{id}/agents` | `exclude` subseries IDs | 30 min |
+| `GET /v2/event/{id}/news` | — | 10 min |
+| `GET /v2/event/{id}/pickem` | — | 5 min |
 | `GET /v2/events/matches` | `event_id` | 10 min |
 | `GET /v2/search` | `q` | 5 min |
 | `GET /v2/player` | `id`, `q` (profile/matches), `timespan`, `page` | 30 min / 10 min |
@@ -309,11 +313,12 @@ GET /v2/match/details?match_id=595657
 </details>
 
 ### `GET /v2/event/{event_id}`
-Event detail: prizes, team rosters, and standings tables.
-**Params:** `event_id` (path, required — from `/v2/events`) | **Cache:** 30 min
+Event detail: metadata and calendar links, resource navigation, stage tabs, current `event-group` standings/schedules, brackets, prizes, and teams. Use a stage slug returned in `stages` to select a different stage.
+**Params:** `event_id` (path, required — from `/v2/events`), `stage` (optional) | **Cache:** 30 min
 
 ```
 GET /v2/event/2124
+GET /v2/event/2978?stage=group-stage
 ```
 
 <details><summary>Response</summary>
@@ -324,18 +329,29 @@ GET /v2/event/2124
   "data": {
     "segments": {
       "event": {
+        "event_id": "2124", "url": "https://www.vlr.gg/event/2124",
         "name": "VCT 2026: Americas Stage 1", "series": "Valorant Champions Tour 2026",
         "dates": "Apr 15 - May 10, 2026", "prize": "$250,000 USD",
-        "location": "Los Angeles, USA", "logo": "https://owcdn.net/img/..."
+        "location": "Los Angeles, USA", "location_code": "us", "logo": "https://owcdn.net/img/...",
+        "calendar": { "google": "https://calendar.google.com/...", "apple": "webcal://...", "subscription": "https://www.vlr.gg/event/ical/2124", "download": "https://www.vlr.gg/event/ical/2124" }
       },
+      "resources": [{ "name": "Matches", "count": "66", "url": "https://www.vlr.gg/event/matches/2124/...", "active": false }],
+      "stages": [{ "name": "Group Stage", "dates": "Apr 15-May 1", "slug": "group-stage", "url": "https://www.vlr.gg/event/2124/.../group-stage", "active": true }],
+      "active_stage": { "name": "Group Stage", "slug": "group-stage", "active": true },
+      "groups": [{
+        "id": "2648", "name": "Group Alpha",
+        "teams": [{ "rank": 1, "id": "120", "name": "100 Thieves", "state": "advanced", "record": "5-0", "maps": "10/2", "rounds": "150/120", "round_differential": "+30" }],
+        "matches": [{ "match_id": "701027", "series": "Week 1", "format": "Bo3", "team1": { "name": "100T", "score": "2", "is_winner": true }, "team2": { "name": "C9", "score": "0", "is_winner": false } }]
+      }],
+      "brackets": [{ "type": "upper", "rounds": [{ "name": "Upper Final", "matches": [{ "match_id": "701100", "utc_timestamp": "1786003200", "team1": { "id": "120", "name": "100 Thieves", "score": "3" }, "team2": { "id": "200", "name": "Cloud9", "score": "1" } }] }] }],
       "prizes": [
         { "placement": "1st", "amount": "$100,000", "team": { "id": "120", "name": "100 Thieves", "logo": "...", "region": "United States" } },
         { "placement": "2nd", "amount": "$60,000", "team": { "id": "2355", "name": "KRÜ Esports", "logo": "...", "region": "Chile" } }
       ],
       "teams": [{
-        "id": "120", "name": "100 Thieves",
-        "players": [{ "id": "9", "name": "Asuna", "flag": "mod-us" }],
-        "qualification": "NA Circuit Points"
+        "id": "120", "name": "100 Thieves", "logo": "https://owcdn.net/img/...", "url": "https://www.vlr.gg/team/120/100-thieves",
+        "players": [{ "id": "9", "name": "Asuna", "flag": "us" }],
+        "qualification": "NA Circuit Points", "qualification_url": "https://www.vlr.gg/event/..."
       }],
       "standings": [{
         "stage": "Group Stage", "columns": ["Team", "W", "L", "RD", "MRD"],
@@ -346,6 +362,22 @@ GET /v2/event/2124
 }
 ```
 </details>
+
+### Event subresources
+
+The event navigation on VLR.GG is exposed directly:
+
+```
+GET /v2/event/2978/stats?side=ct&role=sentinel&agent=killjoy&map_id=12&min_rounds=100&sort=kmax&dir=desc&exclude=39139.39140
+GET /v2/event/2978/agents?exclude=39139.39140
+GET /v2/event/2978/news
+GET /v2/event/2978/pickem
+```
+
+- `stats` returns the same complete player columns as `/v2/stats`, scoped to the event, plus available stage/subseries IDs.
+- `agents` returns global and per-map pick rates plus each team's agent composition by map.
+- `news` returns canonical article IDs, titles, dates, and URLs.
+- `pickem` returns public fixture groups, known winners, lock state, leaderboard distribution, and group/leaderboard URLs. It does not expose authenticated picks or group operations.
 
 ### `GET /v2/search`
 Cross-entity search for players, teams, and events.
@@ -556,7 +588,11 @@ Preserved for backwards compatibility. Most return `{"data": {"status": int, "se
 | `GET /stats` | Same filters as `/v2/stats` |
 | `GET /rankings` | `region` |
 | `GET /events` | `q` (upcoming/completed/live), `page` |
-| `GET /event/{id}` | — (path param) |
+| `GET /event/{id}` | `stage` |
+| `GET /event/{id}/stats` | Same filters as `/v2/event/{id}/stats` |
+| `GET /event/{id}/agents` | `exclude` |
+| `GET /event/{id}/news` | — |
+| `GET /event/{id}/pickem` | — |
 | `GET /events/matches` | `event_id` |
 | `GET /search` | `q` |
 | `GET /player` | `id`, `timespan` |

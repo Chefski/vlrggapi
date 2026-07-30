@@ -101,6 +101,83 @@ async def test_v2_invalid_event_query_returns_400(client):
 
 
 @pytest.mark.anyio
+async def test_v2_event_detail_forwards_stage(client, monkeypatch):
+    captured = {}
+
+    async def fake_detail(event_id, stage=None):
+        captured.update({"event_id": event_id, "stage": stage})
+        return {"data": {"status": 200, "segments": {"groups": []}}}
+
+    monkeypatch.setattr("routers.v2_router.get_event_detail_data", fake_detail)
+    resp = await client.get("/v2/event/2978?stage=group-stage")
+
+    assert resp.status_code == 200
+    assert captured == {"event_id": "2978", "stage": "group-stage"}
+
+
+@pytest.mark.anyio
+async def test_v2_event_detail_rejects_unsafe_stage(client):
+    resp = await client.get("/v2/event/2978?stage=../stats")
+    assert resp.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_v2_event_stats_forwards_filters(client, monkeypatch):
+    captured = {}
+
+    async def fake_stats(event_id, **filters):
+        captured.update({"event_id": event_id, **filters})
+        return {"data": {"status": 200, "segments": []}}
+
+    monkeypatch.setattr("routers.v2_router.get_event_stats_data", fake_stats)
+    resp = await client.get(
+        "/v2/event/2978/stats?sort=kmax&dir=asc&side=ct&role=sentinel"
+        "&agent=killjoy&map_id=12&min_rounds=100&exclude=551.552"
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "event_id": "2978",
+        "sort": "kmax",
+        "direction": "asc",
+        "side": "ct",
+        "role": "sentinel",
+        "agent": "killjoy",
+        "map_id": "12",
+        "min_rounds": 100,
+        "exclude": "551.552",
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("resource", ["stats", "agents", "news", "pickem"])
+async def test_v2_event_resources_reject_invalid_id(client, resource):
+    resp = await client.get(f"/v2/event/not-an-id/{resource}")
+    assert resp.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_v2_event_agents_rejects_invalid_exclude(client):
+    resp = await client.get("/v2/event/2978/agents?exclude=551,552")
+    assert resp.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_original_event_detail_forwards_stage(client, monkeypatch):
+    captured = {}
+
+    async def fake_detail(event_id, stage=None):
+        captured.update({"event_id": event_id, "stage": stage})
+        return {"data": {"status": 200, "segments": {"groups": []}}}
+
+    monkeypatch.setattr("routers.vlr_router.get_event_detail_data", fake_detail)
+    resp = await client.get("/event/2978?stage=playoffs")
+
+    assert resp.status_code == 200
+    assert captured == {"event_id": "2978", "stage": "playoffs"}
+
+
+@pytest.mark.anyio
 async def test_original_news_not_redirect(client):
     """Original /news endpoint should respond directly (not redirect)."""
     resp = await client.get("/news", follow_redirects=False)

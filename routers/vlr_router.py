@@ -4,7 +4,12 @@ Original unversioned API router — preserved for backwards compatibility.
 from fastapi import APIRouter, Query
 
 from routers.shared_handlers import (
+    get_event_agents_data,
+    get_event_detail_data,
     get_event_matches_data,
+    get_event_news_data,
+    get_event_pickem_data,
+    get_event_stats_data,
     get_events_data,
     get_health_data,
     get_match_data,
@@ -249,6 +254,63 @@ async def VLR_event_matches(
     """Get match list for a specific event."""
     validate_id_param(event_id, "event_id")
     return await get_event_matches_data(event_id)
+
+
+@router.get("/event/{event_id}")
+async def VLR_event_detail(
+    event_id: str,
+    stage: str | None = Query(None, description="Event stage slug"),
+):
+    """Get event overview, stage tabs, groups, brackets, teams, and prizes."""
+    validate_id_param(event_id, "event_id")
+    return await get_event_detail_data(event_id, stage)
+
+
+@router.get("/event/{event_id}/stats")
+async def VLR_event_stats(
+    event_id: str,
+    sort: str = Query("rating2"),
+    sort_dir: str = Query("desc", alias="dir"),
+    side: str = Query("all"),
+    role: str = Query("all"),
+    agent: str = Query("all"),
+    map_id: str = Query("all"),
+    min_rounds: int = Query(0),
+    exclude_series: str | None = Query(None, alias="exclude"),
+):
+    validate_id_param(event_id, "event_id")
+    return await get_event_stats_data(
+        event_id,
+        sort=sort,
+        direction=sort_dir,
+        side=side,
+        role=role,
+        agent=agent,
+        map_id=map_id,
+        min_rounds=min_rounds,
+        exclude=exclude_series,
+    )
+
+
+@router.get("/event/{event_id}/agents")
+async def VLR_event_agents(
+    event_id: str,
+    exclude_series: str | None = Query(None, alias="exclude"),
+):
+    validate_id_param(event_id, "event_id")
+    return await get_event_agents_data(event_id, exclude_series)
+
+
+@router.get("/event/{event_id}/news")
+async def VLR_event_news(event_id: str):
+    validate_id_param(event_id, "event_id")
+    return await get_event_news_data(event_id)
+
+
+@router.get("/event/{event_id}/pickem")
+async def VLR_event_pickem(event_id: str):
+    validate_id_param(event_id, "event_id")
+    return await get_event_pickem_data(event_id)
 
 
 @router.get("/health")

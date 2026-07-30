@@ -1,4 +1,5 @@
 from .event_detail import vlr_event_detail
+from .event_resources import vlr_event_agents, vlr_event_news, vlr_event_pickem, vlr_event_stats
 from .events import vlr_event_matches, vlr_events
 from .health import check_health
 from .match_detail import vlr_match_detail
