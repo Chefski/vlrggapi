@@ -7,13 +7,7 @@
 
 An Unofficial REST API for [vlr.gg](https://www.vlr.gg/), a site for Valorant Esports match and news coverage.
 
-Built by [Andre Saddler](https://github.com/axsddlr/)
-
-## Support
-
-If this API helps your projects, you can support ongoing maintenance and development on Ko-fi.
-
-<a href='https://ko-fi.com/J3J1IR40C' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+Based on the original API created by [Andre Saddler](https://github.com/axsddlr/) and expanded and improved by [Chefski](https://github.com/Chefski/).
 
 ## Quick Start
 
